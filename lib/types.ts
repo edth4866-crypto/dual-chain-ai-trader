@@ -1,22 +1,42 @@
 export type Chain = "solana" | "bsc" | "robinhood";
 
+export type HolderInfo = {
+  tokenAccount: string;
+  walletOwner: string;
+  amount: number;
+  percentageOfSupply: number;
+};
+
 export type TokenCandidate = {
   address: string;
   symbol: string;
   name: string;
   chain: Chain;
+
   priceUsd: number;
+  priceChange5mPct?: number;
+  priceChange1hPct?: number;
+  priceChange24hPct?: number;
+
   liquidityUsd: number;
   volume5mUsd: number;
   volume1hUsd: number;
   marketCapUsd: number;
+
   holders?: number;
+
   buyCount5m?: number;
   sellCount5m?: number;
+
   top10HolderPct?: number;
   devWalletPct?: number;
+
   mintAuthority?: boolean;
   freezeAuthority?: boolean;
+
+  supply?: number;
+
+  topHolders?: HolderInfo[];
 };
 
 export type AgentResult = {

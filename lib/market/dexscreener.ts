@@ -8,6 +8,11 @@ export type MarketPair = {
     name: string;
   };
   priceUsd?: string;
+  priceChange?: {
+    m5?: number;
+    h1?: number;
+    h24?: number;
+  };
   liquidity?: {
     usd?: number;
   };

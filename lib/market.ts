@@ -19,13 +19,29 @@ function toCandidate(pair: any): TokenCandidate | null {
     symbol: pair.baseToken.symbol || "UNKNOWN",
     name: pair.baseToken.name || "Unknown Token",
     chain,
+
     priceUsd: Number(pair.priceUsd || 0),
+
+    priceChange5mPct: Number(pair.priceChange?.m5 || 0),
+    priceChange1hPct: Number(pair.priceChange?.h1 || 0),
+    priceChange24hPct: Number(pair.priceChange?.h24 || 0),
+
     liquidityUsd: Number(pair.liquidity?.usd || 0),
+
     volume5mUsd: Number(pair.volume?.m5 || 0),
     volume1hUsd: Number(pair.volume?.h1 || 0),
-    marketCapUsd: Number(pair.marketCap || pair.fdv || 0),
-    buyCount5m: Number(pair.txns?.m5?.buys || 0),
-    sellCount5m: Number(pair.txns?.m5?.sells || 0),
+
+    marketCapUsd: Number(
+      pair.marketCap || pair.fdv || 0
+    ),
+
+    buyCount5m: Number(
+      pair.txns?.m5?.buys || 0
+    ),
+
+    sellCount5m: Number(
+      pair.txns?.m5?.sells || 0
+    ),
   };
 }
 
@@ -36,7 +52,10 @@ export async function getRealCandidates(
 
   const candidates = pairs
     .map(toCandidate)
-    .filter((token): token is TokenCandidate => token !== null);
+    .filter(
+      (token): token is TokenCandidate =>
+        token !== null
+    );
 
   const enriched: TokenCandidate[] = [];
 
@@ -47,7 +66,9 @@ export async function getRealCandidates(
     }
 
     try {
-      const mintInfo = await getSolanaMintInfo(token.address);
+      const mintInfo = await getSolanaMintInfo(
+        token.address
+      );
 
       if (!mintInfo) {
         enriched.push(token);
@@ -56,11 +77,29 @@ export async function getRealCandidates(
 
       enriched.push({
         ...token,
-        mintAuthority: Boolean(mintInfo.mintAuthority),
-        freezeAuthority: Boolean(mintInfo.freezeAuthority),
-        top10HolderPct: mintInfo.top10HolderPct,
+
+        mintAuthority: Boolean(
+          mintInfo.mintAuthority
+        ),
+
+        freezeAuthority: Boolean(
+          mintInfo.freezeAuthority
+        ),
+
+        supply: mintInfo.supply,
+
+        top10HolderPct:
+          mintInfo.top10HolderPct,
+
+        topHolders:
+          mintInfo.topHolders,
       });
-    } catch {
+    } catch (error) {
+      console.error(
+        `Solana enrichment failed for ${token.address}:`,
+        error
+      );
+
       enriched.push(token);
     }
   }
@@ -71,13 +110,42 @@ export async function getRealCandidates(
 export async function getCandidatesForChain(
   chain: "solana" | "bsc"
 ): Promise<TokenCandidate[]> {
-  const query = chain === "solana" ? "PEPE" : "BNB";
+  const query =
+    chain === "solana"
+      ? "PEPE"
+      : "BNB";
 
-  const candidates = await getRealCandidates(query);
+  const candidates =
+    await getRealCandidates(query);
 
   return candidates
-    .filter((token) => token.chain === chain)
-    .filter((token) => token.liquidityUsd >= 50000)
-    .filter((token) => token.volume1hUsd > 0)
+    .filter(
+      (token) =>
+        token.chain === chain
+    )
+    .filter(
+      (token) =>
+        token.liquidityUsd >= 50000
+    )
+    .filter(
+      (token) =>
+        token.volume1hUsd > 0
+    )
+    .sort((a, b) => {
+      if (
+        b.volume1hUsd !==
+        a.volume1hUsd
+      ) {
+        return (
+          b.volume1hUsd -
+          a.volume1hUsd
+        );
+      }
+
+      return (
+        b.liquidityUsd -
+        a.liquidityUsd
+      );
+    })
     .slice(0, 20);
 }

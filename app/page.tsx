@@ -107,6 +107,99 @@ export default function Home() {
             ))}
           </ul>
 
+          <div
+            style={{
+              marginTop: 25,
+              padding: 20,
+              border: '1px solid #444',
+              borderRadius: 10,
+            }}
+          >
+            <h3>🐋 TOP 10 WHALES</h3>
+
+            {result.topWhales?.length > 0 ? (
+              <div>
+                {result.topWhales.map(
+                  (whale: any, index: number) => {
+                    const actionColor =
+                      whale.action === 'BUY'
+                        ? '#16a34a'
+                        : whale.action === 'SELL'
+                        ? '#dc2626'
+                        : '#888';
+
+                    return (
+                      <div
+                        key={whale.walletAddress}
+                        style={{
+                          padding: '14px 0',
+                          borderBottom:
+                            index === result.topWhales.length - 1
+                              ? 'none'
+                              : '1px solid #333',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: 10,
+                          }}
+                        >
+                          <strong>
+                            #{index + 1}
+                          </strong>
+
+                          <span>
+                            {whale.percentageOfSupply.toFixed(2)}%
+                          </span>
+
+                          <strong
+                            style={{
+                              color: actionColor,
+                            }}
+                          >
+                            {whale.action}
+                          </strong>
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 6,
+                            fontSize: 13,
+                            wordBreak: 'break-all',
+                            fontFamily: 'monospace',
+                            opacity: 0.75,
+                          }}
+                        >
+                          {whale.walletAddress}
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 6,
+                            fontSize: 13,
+                          }}
+                        >
+                          Net Flow:{' '}
+                          {whale.netAmount.toLocaleString()}
+                          {' · '}
+                          Transactions:{' '}
+                          {whale.transactionCount}
+                        </div>
+                      </div>
+                    );
+                  }
+                )}
+              </div>
+            ) : (
+              <p>
+                No whale data available.
+              </p>
+            )}
+          </div>
+
           <h3>Agent Handoff</h3>
 
           {result.agents?.map((agent: any, index: number) => (
