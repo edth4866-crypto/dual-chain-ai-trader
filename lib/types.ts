@@ -1,4 +1,4 @@
-export type Chain = "solana" | "robinhood";
+export type Chain = "solana" | "bsc" | "robinhood";
 
 export type TokenCandidate = {
   address: string;
