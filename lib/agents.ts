@@ -64,7 +64,7 @@ function contractRisk(t: TokenCandidate): AgentResult {
   const mint = !!t.mintAuthority, freeze = !!t.freezeAuthority;
   const bad = mint || freeze;
   return {name:"Contract Risk",status:bad?"VETO":"PASS",score:bad?20:90,
-    note:bad?"Mint/freeze authority is enabled in the supplied data.":"No supplied mint/freeze authority flag.",
+    note:bad?"Mint/freeze authority is enabled in the supplied data.":"Mint and freeze authorities are disabled.",
     data:{mintAuthority:mint,freezeAuthority:freeze}};
 }
 

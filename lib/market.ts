@@ -19,19 +19,12 @@ function toCandidate(pair: any): TokenCandidate | null {
     symbol: pair.baseToken.symbol || "UNKNOWN",
     name: pair.baseToken.name || "Unknown Token",
     chain,
-
     priceUsd: Number(pair.priceUsd || 0),
-
     liquidityUsd: Number(pair.liquidity?.usd || 0),
-
     volume5mUsd: Number(pair.volume?.m5 || 0),
-
     volume1hUsd: Number(pair.volume?.h1 || 0),
-
     marketCapUsd: Number(pair.marketCap || pair.fdv || 0),
-
     buyCount5m: Number(pair.txns?.m5?.buys || 0),
-
     sellCount5m: Number(pair.txns?.m5?.sells || 0),
   };
 }
@@ -45,29 +38,32 @@ export async function getRealCandidates(
     .map(toCandidate)
     .filter((token): token is TokenCandidate => token !== null);
 
-  const enriched = await Promise.all(
-    candidates.map(async (token) => {
-      if (token.chain !== "solana") {
-        return token;
+  const enriched: TokenCandidate[] = [];
+
+  for (const token of candidates) {
+    if (token.chain !== "solana") {
+      enriched.push(token);
+      continue;
+    }
+
+    try {
+      const mintInfo = await getSolanaMintInfo(token.address);
+
+      if (!mintInfo) {
+        enriched.push(token);
+        continue;
       }
 
-      try {
-        const mintInfo = await getSolanaMintInfo(token.address);
-
-        if (!mintInfo) {
-          return token;
-        }
-
-        return {
-          ...token,
-          mintAuthority: Boolean(mintInfo.mintAuthority),
-          freezeAuthority: Boolean(mintInfo.freezeAuthority),
-        };
-      } catch {
-        return token;
-      }
-    })
-  );
+      enriched.push({
+        ...token,
+        mintAuthority: Boolean(mintInfo.mintAuthority),
+        freezeAuthority: Boolean(mintInfo.freezeAuthority),
+        top10HolderPct: mintInfo.top10HolderPct,
+      });
+    } catch {
+      enriched.push(token);
+    }
+  }
 
   return enriched;
 }
