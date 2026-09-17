@@ -1,4 +1,7 @@
-export type Chain = "solana" | "bsc" | "robinhood";
+export type Chain =
+  | "solana"
+  | "bsc"
+  | "robinhood";
 
 export type HolderInfo = {
   tokenAccount: string;
@@ -13,14 +16,19 @@ export type TokenCandidate = {
   name: string;
   chain: Chain;
 
+  candidateRank?: number;
+
   priceUsd: number;
+
   priceChange5mPct?: number;
   priceChange1hPct?: number;
   priceChange24hPct?: number;
 
   liquidityUsd: number;
+
   volume5mUsd: number;
   volume1hUsd: number;
+
   marketCapUsd: number;
 
   holders?: number;
@@ -29,6 +37,7 @@ export type TokenCandidate = {
   sellCount5m?: number;
 
   top10HolderPct?: number;
+
   devWalletPct?: number;
 
   mintAuthority?: boolean;
@@ -37,22 +46,57 @@ export type TokenCandidate = {
   supply?: number;
 
   topHolders?: HolderInfo[];
+
+  socialLinks?: {
+    type?: string;
+    url?: string;
+  }[];
+
+  websiteLinks?: {
+    label?: string;
+    url?: string;
+  }[];
+
+  description?: string;
+
+  boostAmount?: number;
+  boostActive?: boolean;
 };
 
 export type AgentResult = {
   name: string;
-  status: "PASS" | "WARN" | "VETO";
+
+  status:
+    | "PASS"
+    | "WARN"
+    | "VETO";
+
   score: number;
+
   note: string;
-  data: Record<string, unknown>;
+
+  data: Record<
+    string,
+    unknown
+  >;
 };
 
 export type FinalDecision = {
-  action: "BUY" | "SELL" | "HOLD" | "VETO";
+  action:
+    | "BUY"
+    | "SELL"
+    | "HOLD"
+    | "VETO";
+
   score: number;
+
   confidence: number;
+
   positionUsd: number;
+
   stopLossPct: number;
+
   takeProfitPct: number;
+
   reasons: string[];
 };
