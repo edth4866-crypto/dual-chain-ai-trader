@@ -68,6 +68,64 @@ export async function GET() {
         ? (wins / total) * 100
         : 0;
 
+    // Count AI decisions that are linked to paper positions or trades.
+    const { count: linkedDecisions, error: linkedError } =
+      await supabase
+        .from("ai_decision_logs")
+        .select("id", {
+          count: "exact",
+          head: true,
+        })
+        .or(
+          "paper_position_id.not.is.null,paper_trade_id.not.is.null"
+        );
+
+    if (linkedError) {
+      console.error(
+        "Linked AI decisions error:",
+        linkedError
+      );
+    }
+
+    // Number of training trades that do not have a linked AI decision.
+    const { data: trainingLinks, error: trainingLinksError } =
+      await supabase
+        .from("ai_decision_logs")
+        .select("paper_trade_id")
+        .not("paper_trade_id", "is", null);
+
+    if (trainingLinksError) {
+      console.error(
+        "Training link lookup error:",
+        trainingLinksError
+      );
+    }
+
+    const linkedTradeIds = new Set(
+      (trainingLinks ?? [])
+        .map((row) => row.paper_trade_id)
+        .filter(
+          (id): id is number =>
+            id !== null && id !== undefined
+        )
+    );
+
+    const { data: trainingTradeRows, error: tradeRowsError } =
+      await supabase
+        .from("paper_trades")
+        .select("id");
+
+    if (tradeRowsError) {
+      console.error(
+        "Paper trade lookup error:",
+        tradeRowsError
+      );
+    }
+
+    const unlinkedTrades = (trainingTradeRows ?? []).filter(
+      (trade) => !linkedTradeIds.has(trade.id)
+    ).length;
+
     return NextResponse.json({
       success: true,
 
@@ -79,6 +137,8 @@ export async function GET() {
         winRate,
         totalPnl,
         averagePnlPct,
+        linkedDecisions: linkedDecisions ?? 0,
+        unlinkedTrades,
       },
 
       rows,
