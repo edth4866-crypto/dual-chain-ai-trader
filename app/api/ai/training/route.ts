@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabase } from "../../../../lib/supabase";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const { data, error } = await supabase
@@ -68,7 +70,6 @@ export async function GET() {
         ? (wins / total) * 100
         : 0;
 
-    // Count AI decisions that are linked to paper positions or trades.
     const { count: linkedDecisions, error: linkedError } =
       await supabase
         .from("ai_decision_logs")
@@ -87,7 +88,6 @@ export async function GET() {
       );
     }
 
-    // Number of training trades that do not have a linked AI decision.
     const { data: trainingLinks, error: trainingLinksError } =
       await supabase
         .from("ai_decision_logs")
