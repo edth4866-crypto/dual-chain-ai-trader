@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  openPaperPosition,
-} from "../../../../lib/paper/engine";
+import { openPaperPosition } from "../../../../lib/paper/engine";
 import {
   addPosition,
   getPaperAccount,
@@ -23,27 +21,21 @@ export async function POST(request: Request) {
       );
     }
 
-    if (
-      !Number.isFinite(priceUsd) ||
-      priceUsd <= 0
-    ) {
+    if (!Number.isFinite(priceUsd) || priceUsd <= 0) {
       return NextResponse.json(
         { error: "Invalid priceUsd." },
         { status: 400 }
       );
     }
 
-    if (
-      !Number.isFinite(positionUsd) ||
-      positionUsd <= 0
-    ) {
+    if (!Number.isFinite(positionUsd) || positionUsd <= 0) {
       return NextResponse.json(
         { error: "Invalid positionUsd." },
         { status: 400 }
       );
     }
 
-    const account = getPaperAccount();
+    const account = await getPaperAccount();
 
     if (positionUsd > account.balanceUsd) {
       return NextResponse.json(
@@ -60,13 +52,13 @@ export async function POST(request: Request) {
       positionUsd
     );
 
-    addPosition(position);
+    await addPosition(position);
 
     return NextResponse.json({
       success: true,
       message: "Paper BUY executed.",
       position,
-      account: getPaperAccount(),
+      account: await getPaperAccount(),
     });
   } catch (error) {
     console.error("PAPER BUY ERROR:", error);

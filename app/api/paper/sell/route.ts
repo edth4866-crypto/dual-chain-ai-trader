@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const account = getPaperAccount();
+    const account = await getPaperAccount();
 
     const position = account.positions.find(
       (item) => item.token === token

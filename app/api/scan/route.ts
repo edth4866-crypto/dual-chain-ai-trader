@@ -14,6 +14,7 @@ import {
 import {
   openPaperPosition,
 } from "../../../lib/paper/engine";
+import { supabase } from "../../../lib/supabase";
 
 export async function POST(
   request: Request
@@ -94,40 +95,348 @@ export async function POST(
                 topWhales
               );
 
+            /*
+             * AI DECISION LOG
+             *
+             * Every scanned candidate is recorded.
+             *
+             * The returned database ID is kept so
+             * a later Paper Position can be linked
+             * back to this exact AI decision.
+             */
+
+            let decisionLog:
+              { id: number } | null =
+              null;
+
+            try {
+              const debateAgent =
+                agents.find(
+                  (agent) =>
+                    agent.name ===
+                    "Agent Debate"
+                );
+
+              const debateData =
+                debateAgent?.data ??
+                {};
+
+              const debateDecision =
+                typeof debateData.decision ===
+                "string"
+                  ? debateData.decision
+                  : null;
+
+              const debateScore =
+                Number(
+                  debateAgent?.score ??
+                    0
+                );
+
+              const debateConfidence =
+                Number(
+                  debateData.confidence ??
+                    0
+                );
+
+              const buyVotes =
+                Number(
+                  debateData.buyVotes ??
+                    0
+                );
+
+              const holdVotes =
+                Number(
+                  debateData.holdVotes ??
+                    0
+                );
+
+              const avoidVotes =
+                Number(
+                  debateData.avoidVotes ??
+                    0
+                );
+
+              const {
+                data:
+                  insertedDecisionLog,
+                error:
+                  decisionLogError,
+              } =
+                await supabase
+                  .from(
+                    "ai_decision_logs"
+                  )
+                  .insert({
+                    token:
+                      token.address,
+
+                    symbol:
+                      token.symbol,
+
+                    chain:
+                      token.chain,
+
+                    decision:
+                      decision.action,
+
+                    final_score:
+                      decision.score,
+
+                    final_confidence:
+                      decision.confidence,
+
+                    debate_decision:
+                      debateDecision,
+
+                    debate_score:
+                      debateScore,
+
+                    debate_confidence:
+                      debateConfidence,
+
+                    buy_votes:
+                      buyVotes,
+
+                    hold_votes:
+                      holdVotes,
+
+                    avoid_votes:
+                      avoidVotes,
+
+                    entry_price:
+                      token.priceUsd,
+
+                    position_usd:
+                      decision.positionUsd,
+
+                    stop_loss_pct:
+                      decision.stopLossPct,
+
+                    take_profit_pct:
+                      decision.takeProfitPct,
+                  })
+                  .select("id")
+                  .single();
+
+              if (
+                decisionLogError
+              ) {
+                console.error(
+                  "AI decision log save failed:",
+                  decisionLogError
+                );
+              } else if (
+                insertedDecisionLog
+              ) {
+                decisionLog = {
+                  id: Number(
+                    insertedDecisionLog.id
+                  ),
+                };
+              }
+            } catch (error) {
+              /*
+               * Logging failure must NOT stop
+               * the existing AI scan or
+               * Paper Trading engine.
+               */
+
+              console.error(
+                "AI decision logging error:",
+                error
+              );
+            }
+
             let paperTrade = null;
+
+            /*
+             * PAPER TRADING
+             *
+             * Safety rules:
+             * 1. BUY decision required
+             * 2. Token must have a valid price
+             * 3. Never open a second position
+             * 4. Paper position size is fixed at $10
+             * 5. Never spend more cash than available
+             * 6. No real funds are used
+             */
 
             if (
               decision.action === "BUY" &&
-              decision.positionUsd > 0 &&
               token.priceUsd > 0
             ) {
               const existingPosition =
-                getOpenPosition(
+                await getOpenPosition(
                   token.address
                 );
 
               const account =
-                getPaperAccount();
+                await getPaperAccount();
 
-              if (
-                !existingPosition &&
-                decision.positionUsd <=
-                  account.balanceUsd
+              const paperPositionUsd = 10;
+
+              const scorePass =
+                decision.score >= 70;
+
+              const liquidityPass =
+                (token.liquidityUsd ?? 0) >=
+                10000;
+
+              const holderPass =
+                (token.top10HolderPct ?? 100) <=
+                60;
+
+              const whalePass =
+                (token.topHolders?.[0]
+                  ?.percentageOfSupply ?? 100) <=
+                30;
+
+              const contractRiskPass =
+                token.mintAuthority !== true &&
+                token.freezeAuthority !== true;
+
+              const riskGatePass =
+                scorePass &&
+                liquidityPass &&
+                holderPass &&
+                whalePass &&
+                contractRiskPass;
+
+              if (existingPosition) {
+                paperTrade = {
+                  action: "SKIP",
+                  reason:
+                    "Existing open position",
+                  existingPosition,
+                };
+              } else if (
+                !riskGatePass
               ) {
+                const failedChecks: string[] =
+                  [];
+
+                if (!scorePass) {
+                  failedChecks.push(
+                    "AI score below 70"
+                  );
+                }
+
+                if (!liquidityPass) {
+                  failedChecks.push(
+                    "Liquidity below $10,000"
+                  );
+                }
+
+                if (!holderPass) {
+                  failedChecks.push(
+                    "Top 10 holder concentration too high"
+                  );
+                }
+
+                if (!whalePass) {
+                  failedChecks.push(
+                    "Top whale concentration too high"
+                  );
+                }
+
+                if (!contractRiskPass) {
+                  failedChecks.push(
+                    "Contract risk detected"
+                  );
+                }
+
+                paperTrade = {
+                  action: "SKIP",
+                  reason:
+                    "Risk Gate rejected",
+                  failedChecks,
+                };
+              } else if (
+                paperPositionUsd >
+                account.balanceUsd
+              ) {
+                paperTrade = {
+                  action: "SKIP",
+                  reason:
+                    "Insufficient paper cash",
+                };
+              } else {
                 const position =
                   openPaperPosition(
                     token.address,
                     token.symbol,
-                    "solana",
+                    token.chain === "bsc"
+                      ? "bsc"
+                      : "solana",
                     token.priceUsd,
-                    decision.positionUsd
+                    paperPositionUsd
                   );
 
-                addPosition(position);
+                /*
+                 * addPosition now returns the
+                 * Supabase paper_positions.id.
+                 */
+
+                const paperPositionId =
+                  await addPosition(
+                    position
+                  );
+
+                /*
+                 * Connect the exact AI decision
+                 * to the newly created paper position.
+                 */
+
+                if (
+                  decisionLog &&
+                  decisionLog.id
+                ) {
+                  const {
+                    error:
+                      linkError,
+                  } =
+                    await supabase
+                      .from(
+                        "ai_decision_logs"
+                      )
+                      .update({
+                        paper_position_id:
+                          paperPositionId,
+                      })
+                      .eq(
+                        "id",
+                        decisionLog.id
+                      );
+
+                  if (
+                    linkError
+                  ) {
+                    console.error(
+                      "AI decision to paper position link failed:",
+                      linkError
+                    );
+                  }
+                }
 
                 paperTrade = {
                   action: "BUY",
+
                   position,
+
+                  paperPositionId,
+
+                  aiDecisionLogId:
+                    decisionLog?.id ??
+                    null,
+
+                  riskGate: {
+                    scorePass,
+                    liquidityPass,
+                    holderPass,
+                    whalePass,
+                    contractRiskPass,
+                  },
                 };
               }
             }
@@ -290,6 +599,7 @@ export async function POST(
     /*
      * 최종 AI 점수 기준으로 다시 정렬
      */
+
     analyzed.sort(
       (a, b) =>
         b.score -
@@ -299,6 +609,7 @@ export async function POST(
     /*
      * 최종 순위 부여
      */
+
     const finalCandidates =
       analyzed.map(
         (candidate, index) => ({

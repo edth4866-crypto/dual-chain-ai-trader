@@ -15,7 +15,7 @@ export async function POST(request: Request) {
 
     const manualPrices = body.prices ?? {};
 
-    const account = getPaperAccount();
+    const account = await getPaperAccount();
     const closedTrades = [];
     const checkedPositions = [];
 

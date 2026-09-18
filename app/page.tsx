@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function Home() {
   const [chain, setChain] = useState('solana');
@@ -8,29 +8,261 @@ export default function Home() {
   const [result, setResult] = useState<any>(null);
   const [selected, setSelected] = useState<any>(null);
 
+  const [account, setAccount] = useState<any>(null);
+  const [accountLoading, setAccountLoading] = useState(false);
+
+  const [language, setLanguage] =
+    useState<'en' | 'ko'>('en');
+
+  const isKo = language === 'ko';
+
+  const text = {
+    en: {
+      paperDashboard: 'Paper Trading Dashboard',
+      paperMode: '🟢 PAPER MODE',
+      balance: 'Balance',
+      openPositions: 'Open Positions',
+      closedTrades: 'Closed Trades',
+      totalPnl: 'Total P&L',
+      updating: 'Updating...',
+      autoRefresh: 'Auto refresh: 30 seconds',
+      refresh: '🔄 Refresh',
+      openPositionsTitle: '📈 Open Positions',
+      paperBuy: 'PAPER BUY',
+      entry: 'Entry',
+      invested: 'Invested',
+      current: 'Current',
+      value: 'Value',
+      unrealizedPnl: 'Unrealized P&L',
+      closePosition: 'CLOSE POSITION',
+
+      multiChain: 'Multi-Chain AI Trader',
+      description:
+        'Solana + BNB Chain + Robinhood Chain · 10-Agent Handoff · Paper Trading',
+      selectedChain: 'Selected Chain',
+      analyzing: 'Analyzing...',
+      runScan: 'Run AI Scan',
+
+      topCandidates: '🔎 Top Candidates',
+      candidatesAnalyzed: 'candidates analyzed',
+
+      liquidity: 'Liquidity',
+      volume1h: 'Volume 1h',
+      top10: 'Top 10 Holders',
+      whale: 'Whale',
+      fiveMin: '5m Change',
+      oneHour: '1h Change',
+
+      agentHandoff: '🤖 Agent Handoff',
+      topWhales: '🐋 Top Whales',
+      riskSecurity: '🛡️ Risk & Security',
+      mintAuthority: 'Mint Authority',
+      freezeAuthority: 'Freeze Authority',
+      boost: 'Boost',
+      decisionReasons: '📋 Decision Reasons',
+
+      noWhaleData: 'No whale data available.',
+      active: 'ACTIVE',
+      disabled: 'DISABLED',
+      none: 'NONE',
+
+      languageButton: '한국어',
+
+      closeConfirm:
+        'Close this position at the current price?',
+      closeSuccess: 'closed successfully.',
+      closeFailed: 'Failed to close position.',
+      paperBuyLabel: 'PAPER BUY',
+    },
+
+    ko: {
+      paperDashboard: '모의거래 대시보드',
+      paperMode: '🟢 모의거래 모드',
+      balance: '잔액',
+      openPositions: '보유 포지션',
+      closedTrades: '종료 거래',
+      totalPnl: '총 손익',
+      updating: '업데이트 중...',
+      autoRefresh: '자동 새로고침: 30초',
+      refresh: '🔄 새로고침',
+      openPositionsTitle: '📈 보유 포지션',
+      paperBuy: '모의 매수',
+      entry: '진입가',
+      invested: '투자금',
+      current: '현재가',
+      value: '현재 가치',
+      unrealizedPnl: '미실현 손익',
+      closePosition: '포지션 종료',
+
+      multiChain: '멀티체인 AI 트레이더',
+      description:
+        'Solana + BNB Chain + Robinhood Chain · 10개 에이전트 분석 · 모의거래',
+      selectedChain: '선택된 체인',
+      analyzing: '분석 중...',
+      runScan: 'AI 스캔 실행',
+
+      topCandidates: '🔎 주요 후보',
+      candidatesAnalyzed: '개 후보 분석 완료',
+
+      liquidity: '유동성',
+      volume1h: '1시간 거래량',
+      top10: '상위 10개 홀더',
+      whale: '고래',
+      fiveMin: '5분 변동',
+      oneHour: '1시간 변동',
+
+      agentHandoff: '🤖 에이전트 분석',
+      topWhales: '🐋 주요 고래',
+      riskSecurity: '🛡️ 위험 및 보안',
+      mintAuthority: '민트 권한',
+      freezeAuthority: '동결 권한',
+      boost: '부스트',
+      decisionReasons: '📋 판단 근거',
+
+      noWhaleData: '고래 데이터가 없습니다.',
+      active: '활성',
+      disabled: '비활성',
+      none: '없음',
+
+      languageButton: 'English',
+
+      closeConfirm:
+        '현재 가격으로 이 포지션을 종료할까요?',
+      closeSuccess: '포지션이 성공적으로 종료되었습니다.',
+      closeFailed: '포지션 종료에 실패했습니다.',
+      paperBuyLabel: '모의 매수',
+    },
+  };
+
+  const t = text[language];
+
+  async function loadAccount() {
+    setAccountLoading(true);
+
+    try {
+      const response = await fetch(
+        '/api/paper/account',
+        {
+          cache: 'no-store',
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        setAccount(data.account);
+      }
+    } catch (error) {
+      console.error(
+        'Failed to load paper account:',
+        error
+      );
+    } finally {
+      setAccountLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadAccount();
+
+    const interval = setInterval(() => {
+      loadAccount();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   async function runScan() {
     setLoading(true);
     setSelected(null);
 
     try {
-      const response = await fetch('/api/scan', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ chain }),
-      });
+      const response = await fetch(
+        '/api/scan',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
+          body: JSON.stringify({ chain }),
+        }
+      );
 
       const data = await response.json();
+
       setResult(data);
 
       if (data.candidates?.length > 0) {
         setSelected(data.candidates[0]);
       }
+
+      await loadAccount();
     } catch (error) {
       console.error(error);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function closePaperPosition(
+    position: any
+  ) {
+    const confirmed = window.confirm(
+      `${position.symbol} ${t.closeConfirm}`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(
+        '/api/paper/close',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
+          body: JSON.stringify({
+            token: position.token,
+            openedAt: position.openedAt,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        window.alert(
+          data.message ||
+            data.error ||
+            t.closeFailed
+        );
+        return;
+      }
+
+      if (language === 'ko') {
+        window.alert(
+          `${position.symbol} ${t.closeSuccess} 손익: $${Number(
+            data.trade?.pnlUsd || 0
+          ).toFixed(2)}`
+        );
+      } else {
+        window.alert(
+          `${position.symbol} ${t.closeSuccess} P&L: $${Number(
+            data.trade?.pnlUsd || 0
+          ).toFixed(2)}`
+        );
+      }
+
+      await loadAccount();
+    } catch (error) {
+      console.error(
+        'Failed to close paper position:',
+        error
+      );
+
+      window.alert(t.closeFailed);
     }
   }
 
@@ -47,22 +279,388 @@ export default function Home() {
     return '#eab308';
   }
 
+  const positions =
+    account?.positions ?? [];
+
+  const trades =
+    account?.trades ?? [];
+
+  const totalPnl =
+    trades.reduce(
+      (
+        sum: number,
+        trade: any
+      ) =>
+        sum +
+        Number(
+          trade.pnlUsd || 0
+        ),
+      0
+    );
+
   return (
     <main
       style={{
         maxWidth: 1200,
         margin: '0 auto',
-        padding: '40px 20px',
-        fontFamily: 'Arial, sans-serif',
+        padding: '25px 16px 50px',
+        fontFamily:
+          'Arial, sans-serif',
         color: '#111',
       }}
     >
-      <h1 style={{ marginBottom: 8 }}>
-        Multi-Chain AI Trader
+      {/* LANGUAGE SWITCH */}
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent:
+            'flex-end',
+          marginBottom: 12,
+        }}
+      >
+        <button
+          onClick={() =>
+            setLanguage(
+              language === 'en'
+                ? 'ko'
+                : 'en'
+            )
+          }
+          style={{
+            padding:
+              '8px 14px',
+            borderRadius: 20,
+            border:
+              '1px solid #ddd',
+            background: '#fff',
+            color: '#111',
+            cursor: 'pointer',
+            fontWeight: 700,
+          }}
+        >
+          🌐 {t.languageButton}
+        </button>
+      </div>
+
+      {/* PAPER TRADING DASHBOARD */}
+
+      <section
+        style={{
+          background: '#111',
+          color: '#fff',
+          borderRadius: 18,
+          padding: 20,
+          marginBottom: 30,
+          boxShadow:
+            '0 8px 30px rgba(0,0,0,0.15)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent:
+              'space-between',
+            alignItems: 'center',
+            gap: 15,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 13,
+                opacity: 0.6,
+              }}
+            >
+              AI MEMECOIN TRADER
+            </div>
+
+            <h2
+              style={{
+                margin:
+                  '5px 0',
+                fontSize: 25,
+              }}
+            >
+              {t.paperDashboard}
+            </h2>
+          </div>
+
+          <div
+            style={{
+              background:
+                '#16a34a',
+              padding:
+                '7px 12px',
+              borderRadius: 20,
+              fontWeight: 800,
+              fontSize: 13,
+            }}
+          >
+            {t.paperMode}
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns:
+              'repeat(auto-fit, minmax(140px, 1fr))',
+            gap: 10,
+            marginTop: 20,
+          }}
+        >
+          <DashboardMetric
+            label={t.balance}
+            value={
+              account
+                ? `$${Number(
+                    account.balanceUsd ||
+                      0
+                  ).toFixed(2)}`
+                : 'Loading...'
+            }
+          />
+
+          <DashboardMetric
+            label={
+              t.openPositions
+            }
+            value={String(
+              positions.length
+            )}
+          />
+
+          <DashboardMetric
+            label={
+              t.closedTrades
+            }
+            value={String(
+              trades.length
+            )}
+          />
+
+          <DashboardMetric
+            label={t.totalPnl}
+            value={`$${totalPnl.toFixed(
+              2
+            )}`}
+          />
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent:
+              'space-between',
+            alignItems: 'center',
+            marginTop: 18,
+            gap: 10,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 12,
+              opacity: 0.55,
+            }}
+          >
+            {accountLoading
+              ? t.updating
+              : t.autoRefresh}
+          </span>
+
+          <button
+            onClick={loadAccount}
+            style={{
+              padding:
+                '8px 13px',
+              borderRadius: 8,
+              border:
+                '1px solid #555',
+              background: '#222',
+              color: '#fff',
+              cursor:
+                'pointer',
+            }}
+          >
+            {t.refresh}
+          </button>
+        </div>
+
+        {positions.length >
+          0 && (
+          <div
+            style={{
+              marginTop: 20,
+            }}
+          >
+            <h3
+              style={{
+                marginBottom: 10,
+              }}
+            >
+              {t.openPositionsTitle}
+            </h3>
+
+            {positions.map(
+              (
+                position: any,
+                index: number
+              ) => (
+                <div
+                  key={`${position.token}-${position.openedAt}-${index}`}
+                  style={{
+                    background:
+                      '#1d1d1d',
+                    borderRadius: 12,
+                    padding: 14,
+                    marginTop: 8,
+                  }}
+                >
+                  <div
+                    style={{
+                      display:
+                        'flex',
+                      justifyContent:
+                        'space-between',
+                      gap: 10,
+                    }}
+                  >
+                    <strong>
+                      {
+                        position.symbol
+                      }
+                    </strong>
+
+                    <span
+                      style={{
+                        color:
+                          '#22c55e',
+                        fontWeight:
+                          700,
+                      }}
+                    >
+                      {
+                        t.paperBuy
+                      }
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 13,
+                      opacity: 0.7,
+                    }}
+                  >
+                    {t.entry}: $
+                    {Number(
+                      position.entryPrice ||
+                        0
+                    ).toFixed(4)}
+                    {' · '}
+                    {t.invested}: $
+                    {Number(
+                      position.investedUsd ||
+                        0
+                    ).toFixed(2)}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 13,
+                      opacity: 0.7,
+                    }}
+                  >
+                    {t.current}: $
+                    {Number(
+                      position.currentPrice ||
+                        0
+                    ).toFixed(4)}
+                    {' · '}
+                    {t.value}: $
+                    {Number(
+                      position.currentValueUsd ||
+                        0
+                    ).toFixed(2)}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color:
+                        Number(
+                          position.unrealizedPnlUsd ||
+                            0
+                        ) >= 0
+                          ? '#22c55e'
+                          : '#ef4444',
+                    }}
+                  >
+                    {t.unrealizedPnl}: $
+                    {Number(
+                      position.unrealizedPnlUsd ||
+                        0
+                    ).toFixed(2)}
+                    {' · '}
+                    {Number(
+                      position.unrealizedPnlPct ||
+                        0
+                    ).toFixed(2)}
+                    %
+                  </div>
+
+                  <button
+                    onClick={() =>
+                      closePaperPosition(
+                        position
+                      )
+                    }
+                    style={{
+                      marginTop: 12,
+                      width: '100%',
+                      padding:
+                        '10px 12px',
+                      borderRadius: 8,
+                      border:
+                        '1px solid #dc2626',
+                      background:
+                        '#dc2626',
+                      color: '#fff',
+                      cursor:
+                        'pointer',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {
+                      t.closePosition
+                    }
+                  </button>
+                </div>
+              )
+            )}
+          </div>
+        )}
+      </section>
+
+      <h1
+        style={{
+          marginBottom: 8,
+        }}
+      >
+        {t.multiChain}
       </h1>
 
-      <p style={{ opacity: 0.7 }}>
-        Solana + BNB Chain + Robinhood Chain · 10-Agent Handoff · Paper Trading
+      <p
+        style={{
+          opacity: 0.7,
+        }}
+      >
+        {t.description}
       </p>
 
       <div
@@ -73,23 +671,37 @@ export default function Home() {
           flexWrap: 'wrap',
         }}
       >
-        {['solana', 'bsc', 'robinhood'].map((item) => (
+        {[
+          'solana',
+          'bsc',
+          'robinhood',
+        ].map((item) => (
           <button
             key={item}
-            onClick={() => setChain(item)}
+            onClick={() =>
+              setChain(item)
+            }
             style={{
-              padding: '10px 16px',
+              padding:
+                '10px 16px',
               borderRadius: 8,
-              border: '1px solid #ccc',
+              border:
+                '1px solid #ccc',
               background:
-                chain === item ? '#111' : '#fff',
+                chain === item
+                  ? '#111'
+                  : '#fff',
               color:
-                chain === item ? '#fff' : '#111',
-              cursor: 'pointer',
+                chain === item
+                  ? '#fff'
+                  : '#111',
+              cursor:
+                'pointer',
               fontWeight: 600,
             }}
           >
-            {item === 'solana'
+            {item ===
+            'solana'
               ? 'Solana'
               : item === 'bsc'
               ? 'BNB Chain'
@@ -98,9 +710,15 @@ export default function Home() {
         ))}
       </div>
 
-      <p style={{ marginTop: 18 }}>
-        Selected Chain:{' '}
-        <strong>{chain}</strong>
+      <p
+        style={{
+          marginTop: 18,
+        }}
+      >
+        {t.selectedChain}:{' '}
+        <strong>
+          {chain}
+        </strong>
       </p>
 
       <button
@@ -108,26 +726,45 @@ export default function Home() {
         disabled={loading}
         style={{
           marginTop: 5,
-          padding: '13px 24px',
+          padding:
+            '13px 24px',
           borderRadius: 8,
           border: 'none',
           background: '#111',
           color: '#fff',
-          cursor: loading ? 'wait' : 'pointer',
+          cursor: loading
+            ? 'wait'
+            : 'pointer',
           fontWeight: 700,
         }}
       >
-        {loading ? 'Analyzing...' : 'Run AI Scan'}
+        {loading
+          ? t.analyzing
+          : t.runScan}
       </button>
 
-      {result?.candidates?.length > 0 && (
-        <section style={{ marginTop: 35 }}>
+      {result?.candidates
+        ?.length > 0 && (
+        <section
+          style={{
+            marginTop: 35,
+          }}
+        >
           <h2>
-            🔎 Top Candidates
+            {t.topCandidates}
           </h2>
 
-          <p style={{ opacity: 0.65 }}>
-            {result.totalCandidates} candidates analyzed
+          <p
+            style={{
+              opacity: 0.65,
+            }}
+          >
+            {
+              result.totalCandidates
+            }{' '}
+            {
+              t.candidatesAnalyzed
+            }
           </p>
 
           <div
@@ -140,64 +777,88 @@ export default function Home() {
             }}
           >
             {result.candidates.map(
-              (candidate: any) => (
+              (
+                candidate: any
+              ) => (
                 <button
-                  key={candidate.address}
+                  key={
+                    candidate.address
+                  }
                   onClick={() =>
-                    setSelected(candidate)
+                    setSelected(
+                      candidate
+                    )
                   }
                   style={{
-                    textAlign: 'left',
+                    textAlign:
+                      'left',
                     padding: 18,
-                    borderRadius: 12,
                     border:
                       selected?.address ===
                       candidate.address
                         ? '2px solid #111'
                         : '1px solid #ddd',
-                    background: '#fff',
-                    cursor: 'pointer',
+                    background:
+                      '#fff',
+                    cursor:
+                      'pointer',
                     boxShadow:
                       '0 2px 8px rgba(0,0,0,0.06)',
                   }}
                 >
                   <div
                     style={{
-                      display: 'flex',
+                      display:
+                        'flex',
                       justifyContent:
                         'space-between',
-                      alignItems: 'center',
+                      alignItems:
+                        'center',
                     }}
                   >
                     <strong
                       style={{
-                        fontSize: 18,
+                        fontSize:
+                          18,
                       }}
                     >
-                      #{candidate.finalRank}{' '}
-                      {candidate.symbol}
+                      #
+                      {
+                        candidate.finalRank
+                      }{' '}
+                      {
+                        candidate.symbol
+                      }
                     </strong>
 
                     <span
                       style={{
-                        fontWeight: 800,
-                        fontSize: 20,
+                        fontWeight:
+                          800,
+                        fontSize:
+                          20,
                       }}
                     >
-                      {candidate.score}
+                      {
+                        candidate.score
+                      }
                     </span>
                   </div>
 
                   <div
                     style={{
                       marginTop: 8,
-                      color: actionColor(
-                        candidate.action
-                      ),
-                      fontWeight: 800,
+                      color:
+                        actionColor(
+                          candidate.action
+                        ),
+                      fontWeight:
+                        800,
                     }}
                   >
-                    {candidate.action}
+                    {
+                      candidate.action
+                    }
                   </div>
 
                   <div
@@ -208,37 +869,40 @@ export default function Home() {
                       opacity: 0.75,
                     }}
                   >
-                    Liquidity:{' '}
-                    $
+                    {t.liquidity}: $
                     {Number(
                       candidate.market
-                        ?.liquidityUsd || 0
+                        ?.liquidityUsd ||
+                        0
                     ).toLocaleString()}
 
                     <br />
 
-                    Volume 1h:{' '}
-                    $
+                    {t.volume1h}: $
                     {Number(
                       candidate.market
-                        ?.volume1hUsd || 0
+                        ?.volume1hUsd ||
+                        0
                     ).toLocaleString()}
 
                     <br />
 
-                    Top 10 Holders:{' '}
+                    {t.top10}:{' '}
                     {Number(
-                      candidate.security
-                        ?.top10HolderPct || 0
+                      candidate
+                        .security
+                        ?.top10HolderPct ||
+                        0
                     ).toFixed(1)}
                     %
 
                     <br />
 
-                    Whale:{' '}
+                    {t.whale}:{' '}
                     {Number(
                       candidate.whale
-                        ?.percentageOfSupply || 0
+                        ?.percentageOfSupply ||
+                        0
                     ).toFixed(1)}
                     %
                   </div>
@@ -255,39 +919,53 @@ export default function Home() {
             marginTop: 35,
             padding: 25,
             borderRadius: 14,
-            border: '1px solid #ddd',
-            background: '#fafafa',
+            border:
+              '1px solid #ddd',
+            background:
+              '#fafafa',
           }}
         >
           <div
             style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
+              display:
+                'flex',
+              justifyContent:
+                'space-between',
+              alignItems:
+                'center',
               gap: 20,
-              flexWrap: 'wrap',
+              flexWrap:
+                'wrap',
             }}
           >
             <div>
-              <h2 style={{ marginBottom: 5 }}>
-                {selected.name}{' '}
-                ({selected.symbol})
+              <h2
+                style={{
+                  marginBottom: 5,
+                }}
+              >
+                {selected.name} (
+                {selected.symbol})
               </h2>
 
               <div
                 style={{
                   fontSize: 13,
                   opacity: 0.6,
-                  wordBreak: 'break-all',
+                  wordBreak:
+                    'break-all',
                 }}
               >
-                {selected.address}
+                {
+                  selected.address
+                }
               </div>
             </div>
 
             <div
               style={{
-                textAlign: 'right',
+                textAlign:
+                  'right',
               }}
             >
               <div
@@ -296,19 +974,26 @@ export default function Home() {
                   fontWeight: 900,
                 }}
               >
-                {selected.score}/100
+                {
+                  selected.score
+                }
+                /100
               </div>
 
               <div
                 style={{
-                  color: actionColor(
-                    selected.action
-                  ),
-                  fontWeight: 900,
+                  color:
+                    actionColor(
+                      selected.action
+                    ),
+                  fontWeight:
+                    900,
                   fontSize: 18,
                 }}
               >
-                {selected.action}
+                {
+                  selected.action
+                }
               </div>
             </div>
           </div>
@@ -323,85 +1008,115 @@ export default function Home() {
             }}
           >
             <Metric
-              label="Liquidity"
+              label={t.liquidity}
               value={`$${Number(
-                selected.market?.liquidityUsd || 0
+                selected.market
+                  ?.liquidityUsd ||
+                  0
               ).toLocaleString()}`}
             />
 
             <Metric
-              label="Volume 1h"
+              label={t.volume1h}
               value={`$${Number(
-                selected.market?.volume1hUsd || 0
+                selected.market
+                  ?.volume1hUsd ||
+                  0
               ).toLocaleString()}`}
             />
 
             <Metric
-              label="Top 10 Holders"
+              label={t.top10}
               value={`${Number(
-                selected.security?.top10HolderPct || 0
+                selected.security
+                  ?.top10HolderPct ||
+                  0
               ).toFixed(2)}%`}
             />
 
             <Metric
-              label="Whale"
+              label={t.whale}
               value={`${Number(
-                selected.whale?.percentageOfSupply || 0
+                selected.whale
+                  ?.percentageOfSupply ||
+                  0
               ).toFixed(2)}%`}
             />
 
             <Metric
-              label="5m Change"
+              label={t.fiveMin}
               value={`${Number(
-                selected.market?.priceChange5mPct || 0
+                selected.market
+                  ?.priceChange5mPct ||
+                  0
               ).toFixed(2)}%`}
             />
 
             <Metric
-              label="1h Change"
+              label={t.oneHour}
               value={`${Number(
-                selected.market?.priceChange1hPct || 0
+                selected.market
+                  ?.priceChange1hPct ||
+                  0
               ).toFixed(2)}%`}
             />
           </div>
 
-          <h3 style={{ marginTop: 30 }}>
-            🤖 Agent Handoff
+          <h3
+            style={{
+              marginTop: 30,
+            }}
+          >
+            {t.agentHandoff}
           </h3>
 
           <div>
             {selected.agents?.map(
-              (agent: any, index: number) => (
+              (
+                agent: any,
+                index: number
+              ) => (
                 <div
                   key={index}
                   style={{
-                    padding: '12px 0',
+                    padding:
+                      '12px 0',
                     borderBottom:
                       '1px solid #ddd',
                   }}
                 >
                   <div
                     style={{
-                      display: 'flex',
+                      display:
+                        'flex',
                       justifyContent:
                         'space-between',
                       gap: 10,
                     }}
                   >
                     <strong>
-                      {agent.name}
+                      {
+                        agent.name
+                      }
                     </strong>
 
                     <span
                       style={{
-                        color: statusColor(
-                          agent.status
-                        ),
-                        fontWeight: 800,
+                        color:
+                          statusColor(
+                            agent.status
+                          ),
+                        fontWeight:
+                          800,
                       }}
                     >
-                      {agent.status}{' '}
-                      {agent.score}/100
+                      {
+                        agent.status
+                      }{' '}
+                      {
+                        agent.score
+                      }
+                      /100
                     </span>
                   </div>
 
@@ -412,24 +1127,37 @@ export default function Home() {
                       opacity: 0.7,
                     }}
                   >
-                    {agent.note}
+                    {
+                      agent.note
+                    }
                   </div>
                 </div>
               )
             )}
           </div>
 
-          <h3 style={{ marginTop: 30 }}>
-            🐋 Top Whales
+          <h3
+            style={{
+              marginTop: 30,
+            }}
+          >
+            {t.topWhales}
           </h3>
 
-          {selected.topWhales?.length > 0 ? (
+          {selected.topWhales
+            ?.length > 0 ? (
             selected.topWhales.map(
-              (whale: any, index: number) => (
+              (
+                whale: any,
+                index: number
+              ) => (
                 <div
-                  key={whale.walletAddress}
+                  key={
+                    whale.walletAddress
+                  }
                   style={{
-                    padding: '12px 0',
+                    padding:
+                      '12px 0',
                     borderBottom:
                       '1px solid #ddd',
                   }}
@@ -443,12 +1171,15 @@ export default function Home() {
                   %{' '}
                   <strong
                     style={{
-                      color: actionColor(
-                        whale.action
-                      ),
+                      color:
+                        actionColor(
+                          whale.action
+                        ),
                     }}
                   >
-                    {whale.action}
+                    {
+                      whale.action
+                    }
                   </strong>
 
                   <div
@@ -462,7 +1193,9 @@ export default function Home() {
                         'break-all',
                     }}
                   >
-                    {whale.walletAddress}
+                    {
+                      whale.walletAddress
+                    }
                   </div>
 
                   <div
@@ -473,55 +1206,69 @@ export default function Home() {
                   >
                     Net Flow:{' '}
                     {Number(
-                      whale.netAmount || 0
+                      whale.netAmount ||
+                        0
                     ).toLocaleString()}{' '}
                     · Transactions:{' '}
-                    {whale.transactionCount}
+                    {
+                      whale.transactionCount
+                    }
                   </div>
                 </div>
               )
             )
           ) : (
             <p>
-              No whale data available.
+              {
+                t.noWhaleData
+              }
             </p>
           )}
 
-          <h3 style={{ marginTop: 30 }}>
-            🛡️ Risk & Security
+          <h3
+            style={{
+              marginTop: 30,
+            }}
+          >
+            {t.riskSecurity}
           </h3>
 
           <p>
-            Mint Authority:{' '}
+            {t.mintAuthority}:{' '}
             <strong>
               {selected.security
                 ?.mintAuthority
-                ? 'ACTIVE'
-                : 'DISABLED'}
+                ? t.active
+                : t.disabled}
             </strong>
           </p>
 
           <p>
-            Freeze Authority:{' '}
+            {t.freezeAuthority}:{' '}
             <strong>
               {selected.security
                 ?.freezeAuthority
-                ? 'ACTIVE'
-                : 'DISABLED'}
+                ? t.active
+                : t.disabled}
             </strong>
           </p>
 
           <p>
-            Boost:{' '}
+            {t.boost}:{' '}
             <strong>
-              {selected.boost?.active
+              {selected.boost
+                ?.active
                 ? `ACTIVE (${selected.boost.amount})`
-                : 'NONE'}
+                : t.none}
             </strong>
           </p>
 
-          <h3 style={{ marginTop: 30 }}>
-            📋 Decision Reasons
+          <h3
+            style={{
+              marginTop: 30,
+            }}
+          >
+            {t.decisionReasons}
           </h3>
 
           <ul>
@@ -530,7 +1277,9 @@ export default function Home() {
                 reason: string,
                 index: number
               ) => (
-                <li key={index}>
+                <li
+                  key={index}
+                >
                   {reason}
                 </li>
               )
@@ -539,6 +1288,43 @@ export default function Home() {
         </section>
       )}
     </main>
+  );
+}
+
+function DashboardMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div
+      style={{
+        background: '#1d1d1d',
+        borderRadius: 12,
+        padding: 14,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          opacity: 0.55,
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          marginTop: 5,
+          fontSize: 21,
+          fontWeight: 900,
+        }}
+      >
+        {value}
+      </div>
+    </div>
   );
 }
 
@@ -555,7 +1341,8 @@ function Metric({
         padding: 15,
         borderRadius: 10,
         background: '#fff',
-        border: '1px solid #ddd',
+        border:
+          '1px solid #ddd',
       }}
     >
       <div

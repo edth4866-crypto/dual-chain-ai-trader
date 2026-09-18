@@ -4,16 +4,38 @@ import {
   TokenCandidate,
 } from "./types";
 
+import {
+  detectRugRisk,
+} from "./agents/rug-detector";
+
+import {
+  detectSmartMoney,
+  SmartMoneyWallet,
+} from "./agents/smart-money";
+
+import {
+  detectEarlyPump,
+  EarlyPumpInput,
+} from "./agents/early-pump";
+
+import {
+  runAgentDebate,
+} from "./agents/debate";
+
 export const AGENT_NAMES = [
   "Scanner",
   "Liquidity",
   "Volume",
   "Holder",
   "Whale",
+  "Smart Money",
+  "Early Pump",
   "Momentum",
   "Contract Risk",
+  "Rug Detector",
   "Social",
   "Boost",
+  "Agent Debate",
   "Risk Veto",
   "Final AI",
 ];
@@ -21,26 +43,66 @@ export const AGENT_NAMES = [
 function scanner(
   t: TokenCandidate
 ): AgentResult {
-  const score =
-    t.marketCapUsd > 0
-      ? 60
-      : 30;
+  const liquidity =
+    t.liquidityUsd ?? 0;
+
+  const volume =
+    t.volume1hUsd ?? 0;
+
+  const top10 =
+    t.top10HolderPct ?? 100;
+
+  const largestHolder =
+    t.topHolders?.[0]
+      ?.percentageOfSupply ?? 0;
+
+  let score = 50;
+
+  if (liquidity >= 10000) {
+    score += 15;
+  }
+
+  if (
+    liquidity > 0 &&
+    volume / liquidity >= 5
+  ) {
+    score += 15;
+  }
+
+  if (top10 <= 40) {
+    score += 10;
+  }
+
+  if (largestHolder <= 20) {
+    score += 10;
+  }
+
+  score = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(score)
+    )
+  );
 
   return {
     name: "Scanner",
     status:
-      score >= 60
+      score >= 70
         ? "PASS"
         : "WARN",
     score,
     note:
-      score >= 60
-        ? "Market candidate has usable market data."
-        : "Market data is incomplete.",
+      `Initial scan score: ${score}/100.`,
     data: {
-      priceUsd: t.priceUsd,
-      marketCapUsd:
-        t.marketCapUsd,
+      liquidityUsd:
+        liquidity,
+      volume1hUsd:
+        volume,
+      top10HolderPct:
+        top10,
+      largestHolderPct:
+        largestHolder,
     },
   };
 }
@@ -48,31 +110,35 @@ function scanner(
 function liquidity(
   t: TokenCandidate
 ): AgentResult {
-  const score =
-    Math.max(
-      0,
-      Math.min(
-        100,
-        (t.liquidityUsd /
-          100000) *
-          100
-      )
-    );
+  const liquidity =
+    t.liquidityUsd ?? 0;
+
+  let score = 0;
+
+  if (liquidity >= 100000) {
+    score = 100;
+  } else if (liquidity >= 50000) {
+    score = 85;
+  } else if (liquidity >= 25000) {
+    score = 70;
+  } else if (liquidity >= 10000) {
+    score = 55;
+  } else {
+    score = 25;
+  }
 
   return {
     name: "Liquidity",
     status:
-      score >= 60
+      score >= 70
         ? "PASS"
         : "WARN",
     score,
     note:
-      score >= 60
-        ? "Liquidity is sufficient for the current paper-trading filter."
-        : "Liquidity is relatively low.",
+      `Liquidity: $${liquidity.toLocaleString()}.`,
     data: {
       liquidityUsd:
-        t.liquidityUsd,
+        liquidity,
     },
   };
 }
@@ -80,107 +146,54 @@ function liquidity(
 function volume(
   t: TokenCandidate
 ): AgentResult {
-  const volume1h =
-    Math.max(
-      t.volume1hUsd,
-      0
-    );
-
   const volume5m =
-    Math.max(
-      t.volume5mUsd,
-      0
-    );
+    t.volume5mUsd ?? 0;
 
-  const buyCount =
-    Math.max(
-      t.buyCount5m ?? 0,
-      0
-    );
+  const volume1h =
+    t.volume1hUsd ?? 0;
 
-  const sellCount =
-    Math.max(
-      t.sellCount5m ?? 0,
-      0
-    );
+  const liquidity =
+    t.liquidityUsd ?? 0;
 
-  const totalTrades =
-    buyCount +
-    sellCount;
-
-  const buyRatio =
-    totalTrades > 0
-      ? buyCount /
-        totalTrades
-      : 0.5;
-
-  const volumeScore =
-    Math.min(
-      100,
-      (volume1h /
-        100000) *
-        100
-    );
-
-  const acceleration =
-    volume1h > 0
-      ? volume5m /
-        (volume1h / 12)
+  const ratio =
+    liquidity > 0
+      ? volume1h / liquidity
       : 0;
 
-  const accelerationScore =
-    Math.max(
-      0,
-      Math.min(
-        100,
-        50 +
-          (acceleration - 1) *
-            25
-      )
-    );
+  let score = 50;
 
-  const pressureScore =
-    buyRatio * 100;
-
-  const score =
-    Math.round(
-      volumeScore * 0.4 +
-      accelerationScore * 0.3 +
-      pressureScore * 0.3
-    );
+  if (ratio >= 20) {
+    score = 90;
+  } else if (ratio >= 10) {
+    score = 80;
+  } else if (ratio >= 5) {
+    score = 70;
+  } else if (ratio >= 2) {
+    score = 60;
+  } else if (ratio >= 1) {
+    score = 50;
+  } else {
+    score = 35;
+  }
 
   return {
     name: "Volume",
     status:
-      score >= 60
+      score >= 65
         ? "PASS"
         : "WARN",
     score,
     note:
-      `1h volume $${volume1h.toLocaleString()}, ` +
-      `buy pressure ${(buyRatio * 100).toFixed(1)}%.`,
+      `5m volume $${volume5m.toLocaleString()}, 1h volume $${volume1h.toLocaleString()}, volume/liquidity ratio ${ratio.toFixed(
+        2
+      )}x.`,
     data: {
       volume5mUsd:
         volume5m,
-
       volume1hUsd:
         volume1h,
-
-      buyCount5m:
-        buyCount,
-
-      sellCount5m:
-        sellCount,
-
-      buyRatio,
-
-      volumeScore,
-
-      acceleration,
-
-      accelerationScore,
-
-      pressureScore,
+      volumeLiquidityRatio:
+        ratio,
     },
   };
 }
@@ -188,210 +201,248 @@ function volume(
 function holder(
   t: TokenCandidate
 ): AgentResult {
-  const concentration =
-    t.top10HolderPct;
+  const top10 =
+    t.top10HolderPct ?? 100;
 
-  if (
-    concentration ===
-    undefined
-  ) {
-    return {
-      name: "Holder",
-      status: "WARN",
-      score: 40,
-      note:
-        "Holder concentration data is unavailable.",
-      data: {},
-    };
-  }
+  let score = 100;
 
-  let score =
-    100 -
-    concentration *
-      1.5;
-
-  score =
-    Math.max(
-      0,
-      Math.min(
-        100,
-        score
-      )
-    );
-
-  let status:
-    AgentResult["status"] =
-    "PASS";
-
-  if (
-    concentration >=
-    50
-  ) {
-    status = "VETO";
-  } else if (
-    concentration >=
-    30
-  ) {
-    status = "WARN";
+  if (top10 > 70) {
+    score = 25;
+  } else if (top10 > 60) {
+    score = 40;
+  } else if (top10 > 50) {
+    score = 55;
+  } else if (top10 > 40) {
+    score = 70;
+  } else if (top10 > 30) {
+    score = 82;
   }
 
   return {
     name: "Holder",
-    status,
+    status:
+      score >= 70
+        ? "PASS"
+        : "WARN",
     score,
     note:
-      `Actual top-10 holder concentration: ${concentration.toFixed(
+      `Top 10 holders control ${top10.toFixed(
         1
-      )}%.`,
+      )}% of supply.`,
     data: {
       top10HolderPct:
-        concentration,
-
-      topHolders:
-        t.topHolders ||
-        [],
+        top10,
     },
   };
 }
 
 type WhaleFlowInput = {
   percentageOfSupply: number;
-
   action:
     | "BUY"
     | "SELL"
     | "NEUTRAL";
-
   netAmount: number;
-
   transactionCount: number;
+  walletAddress?: string;
 };
 
 function whale(
   t: TokenCandidate,
   whaleFlows: WhaleFlowInput[] = []
 ): AgentResult {
-  const holders =
-    t.topHolders ||
-    [];
+  const largestHolder =
+    t.topHolders?.[0]
+      ?.percentageOfSupply ?? 0;
 
-  if (
-    holders.length === 0
-  ) {
-    return {
-      name: "Whale",
-      status: "WARN",
-      score: 40,
-      note:
-        "Wallet-level holder data is unavailable.",
-      data: {},
-    };
+  let score = 100;
+
+  if (largestHolder > 30) {
+    score = 25;
+  } else if (largestHolder > 20) {
+    score = 45;
+  } else if (largestHolder > 15) {
+    score = 65;
+  } else if (largestHolder > 10) {
+    score = 80;
   }
 
-  const largest =
-    holders[0];
-
-  const largestPct =
-    largest?.percentageOfSupply ||
-    0;
-
-  let concentrationScore =
-    100 -
-    largestPct * 2;
-
-  concentrationScore =
-    Math.max(
-      0,
-      Math.min(
-        100,
-        concentrationScore
-      )
+  const activeFlows =
+    whaleFlows.filter(
+      (flow) =>
+        flow.transactionCount > 0
     );
 
-  let flowScore = 50;
-
-  if (
-    whaleFlows.length >
-    0
-  ) {
-    let buy = 0;
-    let sell = 0;
-
-    for (
-      const flow of whaleFlows
-    ) {
-      if (
-        flow.action ===
-        "BUY"
-      ) {
-        buy += Math.abs(
-          flow.netAmount
-        );
-      } else if (
-        flow.action ===
-        "SELL"
-      ) {
-        sell += Math.abs(
-          flow.netAmount
-        );
-      }
-    }
-
-    const total =
-      buy + sell;
-
-    if (
-      total > 0
-    ) {
-      flowScore =
-        (buy / total) *
-        100;
-    }
-  }
-
-  const score =
-    Math.round(
-      concentrationScore *
-        0.5 +
-      flowScore *
-        0.5
+  const buyFlows =
+    activeFlows.filter(
+      (flow) =>
+        flow.action === "BUY"
     );
 
-  let status:
-    AgentResult["status"] =
-    "PASS";
+  const sellFlows =
+    activeFlows.filter(
+      (flow) =>
+        flow.action === "SELL"
+    );
+
+  const buyPressure =
+    activeFlows.length > 0
+      ? buyFlows.length /
+        activeFlows.length
+      : 0.5;
 
   if (
-    largestPct >=
-    30
+    buyFlows.length >
+    sellFlows.length
   ) {
-    status = "VETO";
-  } else if (
-    score < 40 ||
-    largestPct >= 15
-  ) {
-    status = "WARN";
+    score += 5;
   }
+
+  if (
+    sellFlows.length >
+    buyFlows.length
+  ) {
+    score -= 10;
+  }
+
+  score = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(score)
+    )
+  );
 
   return {
     name: "Whale",
-    status,
+    status:
+      score >= 70
+        ? "PASS"
+        : "WARN",
     score,
     note:
-      `Whale concentration: ${largestPct.toFixed(
+      `Largest holder concentration ${largestHolder.toFixed(
         2
-      )}%. Top-whale flow score: ${flowScore.toFixed(
-        0
-      )}/100.`,
+      )}%, buy pressure ${(
+        buyPressure * 100
+      ).toFixed(1)}%.`,
     data: {
-      largestHolder:
-        largest,
+      largestHolderPct:
+        largestHolder,
+      activeWallets:
+        activeFlows.length,
+      buyWallets:
+        buyFlows.length,
+      sellWallets:
+        sellFlows.length,
+      buyPressure,
+    },
+  };
+}
 
-      topHolders:
-        holders,
+function smartMoney(
+  whaleFlows: WhaleFlowInput[] = []
+): AgentResult {
+  const wallets: SmartMoneyWallet[] =
+    whaleFlows.map(
+      (flow, index) => ({
+        walletAddress:
+          flow.walletAddress ??
+          `unknown-${index}`,
+        percentageOfSupply:
+          flow.percentageOfSupply,
+        action:
+          flow.action,
+        netAmount:
+          flow.netAmount,
+        transactionCount:
+          flow.transactionCount,
+      })
+    );
 
-      whaleFlowScore:
-        flowScore,
+  const result =
+    detectSmartMoney(
+      wallets
+    );
+
+  return {
+    name: "Smart Money",
+    status:
+      result.status,
+    score:
+      result.score,
+    note:
+      result.reasons.join(" "),
+    data: {
+      signal:
+        result.signal,
+      reasons:
+        result.reasons,
+      activeWallets:
+        result.smartWallets.length,
+      smartWallets:
+        result.smartWallets,
+    },
+  };
+}
+
+function earlyPump(
+  t: TokenCandidate
+): AgentResult {
+  const input: EarlyPumpInput =
+    {
+      priceChange5mPct:
+        t.priceChange5mPct ?? 0,
+
+      priceChange1hPct:
+        t.priceChange1hPct ?? 0,
+
+      volume5mUsd:
+        t.volume5mUsd ?? 0,
+
+      volume1hUsd:
+        t.volume1hUsd ?? 0,
+
+      liquidityUsd:
+        t.liquidityUsd ?? 0,
+
+      buyCount5m:
+        t.buyCount5m ?? 0,
+
+      sellCount5m:
+        t.sellCount5m ?? 0,
+    };
+
+  const result =
+    detectEarlyPump(
+      input
+    );
+
+  return {
+    name: "Early Pump",
+    status:
+      result.status,
+    score:
+      result.score,
+    note:
+      result.reasons.join(" "),
+    data: {
+      signal:
+        result.signal,
+      reasons:
+        result.reasons,
+      priceChange5mPct:
+        input.priceChange5mPct,
+      priceChange1hPct:
+        input.priceChange1hPct,
+      volume5mUsd:
+        input.volume5mUsd,
+      volume1hUsd:
+        input.volume1hUsd,
+      buyCount5m:
+        input.buyCount5m,
+      sellCount5m:
+        input.sellCount5m,
     },
   };
 }
@@ -399,90 +450,58 @@ function whale(
 function momentum(
   t: TokenCandidate
 ): AgentResult {
-  const baseline =
-    Math.max(
-      t.volume1hUsd / 12,
-      1
-    );
+  const change5m =
+    t.priceChange5mPct ?? 0;
 
-  const volumeRatio =
-    t.volume5mUsd /
-    baseline;
+  const change1h =
+    t.priceChange1hPct ?? 0;
 
-  const volumeScore =
-    Math.max(
-      0,
-      Math.min(
-        100,
-        50 +
-          (volumeRatio - 1) *
-            20
-      )
-    );
+  let score = 50;
 
-  const price5m =
-    t.priceChange5mPct ??
-    0;
+  if (change5m > 10) {
+    score += 20;
+  } else if (change5m > 3) {
+    score += 10;
+  } else if (change5m < -10) {
+    score -= 20;
+  }
 
-  const price1h =
-    t.priceChange1hPct ??
-    0;
+  if (change1h > 100) {
+    score += 25;
+  } else if (change1h > 50) {
+    score += 18;
+  } else if (change1h > 20) {
+    score += 10;
+  } else if (change1h < -30) {
+    score -= 20;
+  }
 
-  const price24h =
-    t.priceChange24hPct ??
-    0;
-
-  const priceScore =
-    Math.max(
-      0,
-      Math.min(
-        100,
-        50 +
-          price5m * 2 +
-          price1h * 1.5 +
-          price24h * 0.5
-      )
-    );
-
-  const score =
-    Math.round(
-      volumeScore * 0.4 +
-      priceScore * 0.6
-    );
+  score = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(score)
+    )
+  );
 
   return {
     name: "Momentum",
     status:
-      score >= 60
+      score >= 70
         ? "PASS"
         : "WARN",
     score,
     note:
-      `Price momentum: 5m ${price5m.toFixed(
+      `5m ${change5m.toFixed(
         2
-      )}%, ` +
-      `1h ${price1h.toFixed(
-        2
-      )}%, ` +
-      `24h ${price24h.toFixed(
+      )}%, 1h ${change1h.toFixed(
         2
       )}%.`,
     data: {
-      volumeAcceleration:
-        volumeRatio,
-
       priceChange5mPct:
-        price5m,
-
+        change5m,
       priceChange1hPct:
-        price1h,
-
-      priceChange24hPct:
-        price24h,
-
-      volumeScore,
-
-      priceScore,
+        change1h,
     },
   };
 }
@@ -496,32 +515,87 @@ function contractRisk(
   const freeze =
     !!t.freezeAuthority;
 
-  const bad =
+  const dangerous =
     mint || freeze;
 
   return {
     name: "Contract Risk",
     status:
-      bad
+      dangerous
         ? "VETO"
         : "PASS",
-
     score:
-      bad
+      dangerous
         ? 20
         : 90,
-
     note:
-      bad
-        ? "Mint/freeze authority is enabled in the supplied data."
-        : "Mint and freeze authorities are disabled.",
-
+      dangerous
+        ? "Mint or freeze authority is active."
+        : "Mint/freeze authorities are disabled.",
     data: {
       mintAuthority:
         mint,
-
       freezeAuthority:
         freeze,
+    },
+  };
+}
+
+function rugDetector(
+  t: TokenCandidate
+): AgentResult {
+  const largestHolderPct =
+    t.topHolders?.[0]
+      ?.percentageOfSupply ?? 0;
+
+  const result =
+    detectRugRisk({
+      liquidityUsd:
+        t.liquidityUsd,
+
+      top10HolderPct:
+        t.top10HolderPct ?? 0,
+
+      largestHolderPct,
+
+      mintAuthority:
+        !!t.mintAuthority,
+
+      freezeAuthority:
+        !!t.freezeAuthority,
+
+      volume1hUsd:
+        t.volume1hUsd,
+
+      priceChange5mPct:
+        t.priceChange5mPct ?? 0,
+
+      priceChange1hPct:
+        t.priceChange1hPct ?? 0,
+    });
+
+  return {
+    name: "Rug Detector",
+    status:
+      result.status,
+    score:
+      result.score,
+    note:
+      result.reasons.join(" "),
+    data: {
+      riskLevel:
+        result.riskLevel,
+      reasons:
+        result.reasons,
+      liquidityUsd:
+        t.liquidityUsd,
+      top10HolderPct:
+        t.top10HolderPct ?? 0,
+      largestHolderPct,
+      mintAuthority:
+        !!t.mintAuthority,
+      freezeAuthority:
+        !!t.freezeAuthority,
     },
   };
 }
@@ -529,147 +603,57 @@ function contractRisk(
 function social(
   t: TokenCandidate
 ): AgentResult {
-  const socials =
-    t.socialLinks ||
-    [];
+  const socialCount =
+    t.socialLinks?.length ?? 0;
 
-  const websites =
-    t.websiteLinks ||
-    [];
+  const websiteCount =
+    t.websiteLinks?.length ?? 0;
 
-  const hasTwitter =
-    socials.some(
-      (social) =>
-        social.type ===
-          "twitter" ||
-        social.url?.includes(
-          "x.com"
-        ) ||
-        social.url?.includes(
-          "twitter.com"
-        )
-    );
+  let score = 40;
 
-  const hasTelegram =
-    socials.some(
-      (social) =>
-        social.type ===
-          "telegram" ||
-        social.url?.includes(
-          "t.me"
-        )
-    );
-
-  const hasDiscord =
-    socials.some(
-      (social) =>
-        social.type ===
-          "discord" ||
-        social.url?.includes(
-          "discord"
-        )
-    );
-
-  const hasWebsite =
-    websites.length > 0;
-
-  const hasDescription =
-    Boolean(
-      t.description &&
-        t.description
-          .trim()
-          .length > 0
-    );
-
-  let score = 0;
-
-  if (
-    hasTwitter
-  ) {
-    score += 35;
+  if (socialCount >= 1) {
+    score += 20;
   }
 
-  if (
-    hasWebsite
-  ) {
-    score += 25;
-  }
-
-  if (
-    hasTelegram
-  ) {
-    score += 15;
-  }
-
-  if (
-    hasDiscord
-  ) {
+  if (socialCount >= 2) {
     score += 10;
   }
 
-  if (
-    hasDescription
-  ) {
+  if (websiteCount >= 1) {
     score += 15;
   }
 
-  score =
-    Math.max(
-      0,
-      Math.min(
-        100,
-        score
-      )
-    );
-
-  let status:
-    AgentResult["status"] =
-    "WARN";
-
   if (
-    score >= 70
+    t.description &&
+    t.description.trim().length > 20
   ) {
-    status = "PASS";
+    score += 5;
   }
+
+  score = Math.max(
+    0,
+    Math.min(
+      100,
+      score
+    )
+  );
 
   return {
     name: "Social",
-    status,
+    status:
+      score >= 65
+        ? "PASS"
+        : "WARN",
     score,
     note:
-      `Social score ${score}/100. ` +
-      `X/Twitter: ${
-        hasTwitter
-          ? "YES"
-          : "NO"
-      }, ` +
-      `Website: ${
-        hasWebsite
-          ? "YES"
-          : "NO"
-      }, ` +
-      `Telegram: ${
-        hasTelegram
-          ? "YES"
-          : "NO"
-      }, ` +
-      `Discord: ${
-        hasDiscord
-          ? "YES"
-          : "NO"
-      }.`,
+      `Social links: ${socialCount}, website links: ${websiteCount}.`,
     data: {
-      hasTwitter,
-      hasWebsite,
-      hasTelegram,
-      hasDiscord,
-      hasDescription,
-
       socialLinks:
-        socials,
-
+        socialCount,
       websiteLinks:
-        websites,
+        websiteCount,
+      hasDescription:
+        !!t.description,
     },
   };
 }
@@ -677,44 +661,30 @@ function social(
 function boost(
   t: TokenCandidate
 ): AgentResult {
-  const amount =
-    t.boostAmount ??
-    0;
-
   const active =
-    t.boostActive ??
-    false;
+    !!t.boostActive;
+
+  const amount =
+    t.boostAmount ?? 0;
+
+  let score =
+    active
+      ? 75
+      : 50;
 
   if (
-    !active ||
-    amount <= 0
+    active &&
+    amount > 0
   ) {
-    return {
-      name: "Boost",
-      status: "WARN",
-      score: 50,
-      note:
-        "No active DexScreener Boost signal detected.",
-      data: {
-        boostActive:
-          false,
-        boostAmount: 0,
-      },
-    };
-  }
-
-  const score =
-    Math.max(
-      0,
-      Math.min(
-        100,
-        60 +
-          Math.min(
-            amount * 2,
-            40
-          )
-      )
+    score = Math.min(
+      100,
+      75 +
+        Math.min(
+          amount,
+          25
+        )
     );
+  }
 
   return {
     name: "Boost",
@@ -722,17 +692,14 @@ function boost(
       score >= 70
         ? "PASS"
         : "WARN",
-
     score,
-
     note:
-      `DexScreener Boost active: ${amount}. ` +
-      `Boost is treated as a promotion/exposure signal, not proof of project quality.`,
-
+      active
+        ? `DexScreener Boost active: ${amount}.`
+        : "No active DexScreener Boost.",
     data: {
       boostActive:
         active,
-
       boostAmount:
         amount,
     },
@@ -742,22 +709,41 @@ function boost(
 function riskVeto(
   agents: AgentResult[]
 ): AgentResult {
-  const vetoes =
+  const hardRisks =
     agents.filter(
       (agent) =>
         agent.status ===
         "VETO"
     );
 
+  const riskScores =
+    agents.map(
+      (agent) =>
+        agent.score
+    );
+
+  const averageRisk =
+    riskScores.length > 0
+      ? riskScores.reduce(
+          (sum, value) =>
+            sum + value,
+          0
+        ) /
+        riskScores.length
+      : 0;
+
   if (
-    vetoes.length > 0
+    hardRisks.length > 0
   ) {
     return {
       name: "Risk Veto",
       status: "VETO",
-      score: 0,
+      score:
+        Math.round(
+          averageRisk
+        ),
       note:
-        `Risk veto triggered by ${vetoes
+        `Hard risk veto triggered by: ${hardRisks
           .map(
             (agent) =>
               agent.name
@@ -765,7 +751,7 @@ function riskVeto(
           .join(", ")}.`,
       data: {
         vetoAgents:
-          vetoes.map(
+          hardRisks.map(
             (agent) =>
               agent.name
           ),
@@ -773,31 +759,18 @@ function riskVeto(
     };
   }
 
-  const average =
-    agents.reduce(
-      (
-        sum,
-        agent
-      ) =>
-        sum +
-        agent.score,
-      0
-    ) /
-    Math.max(
-      agents.length,
-      1
-    );
-
   return {
     name: "Risk Veto",
     status: "WARN",
     score:
       Math.round(
-        average
+        averageRisk
       ),
     note:
-      "No hard risk veto was triggered.",
-    data: {},
+      "No hard risk veto.",
+    data: {
+      vetoAgents: [],
+    },
   };
 }
 
@@ -808,33 +781,26 @@ export function runAgents(
   agents: AgentResult[];
   decision: FinalDecision;
 } {
-  const agents:
-    AgentResult[] =
+  const agents: AgentResult[] =
     [];
 
   const add = (
     result: AgentResult
   ) => {
-    agents.push(
-      result
-    );
+    agents.push(result);
   };
 
-  add(
-    scanner(t)
-  );
+  /*
+   * BASE AGENTS
+   */
 
-  add(
-    liquidity(t)
-  );
+  add(scanner(t));
 
-  add(
-    volume(t)
-  );
+  add(liquidity(t));
 
-  add(
-    holder(t)
-  );
+  add(volume(t));
+
+  add(holder(t));
 
   add(
     whale(
@@ -844,29 +810,104 @@ export function runAgents(
   );
 
   add(
-    momentum(t)
+    smartMoney(
+      whaleFlows
+    )
   );
 
   add(
-    contractRisk(t)
+    earlyPump(t)
   );
 
-  add(
-    social(t)
-  );
+  add(momentum(t));
 
-  add(
-    boost(t)
-  );
+  add(contractRisk(t));
+
+  add(rugDetector(t));
+
+  add(social(t));
+
+  add(boost(t));
+
+  /*
+   * AGENT DEBATE
+   *
+   * Debate uses the specialist agents above.
+   * Final AI and Risk Veto are intentionally
+   * excluded from the debate itself.
+   */
+
+  const debate =
+    runAgentDebate(
+      agents
+    );
+
+  const debateStatus:
+    | "PASS"
+    | "WARN"
+    | "VETO" =
+    debate.decision ===
+    "BUY"
+      ? "PASS"
+      : debate.decision ===
+        "AVOID"
+        ? "VETO"
+        : "WARN";
+
+  const debateAgent:
+    AgentResult =
+    {
+      name: "Agent Debate",
+
+      status:
+        debateStatus,
+
+      score:
+        debate.score,
+
+      note:
+        debate.summary,
+
+      data: {
+        decision:
+          debate.decision,
+
+        confidence:
+          debate.confidence,
+
+        buyVotes:
+          debate.buyVotes,
+
+        holdVotes:
+          debate.holdVotes,
+
+        avoidVotes:
+          debate.avoidVotes,
+
+        strongestBullish:
+          debate.strongestBullish,
+
+        strongestBearish:
+          debate.strongestBearish,
+      },
+    };
+
+  add(debateAgent);
+
+  /*
+   * RISK VETO
+   *
+   * Debate AVOID becomes a hard veto.
+   * This prevents Final AI from ignoring
+   * a strong multi-agent avoidance signal.
+   */
 
   const vetoAgent =
     riskVeto(
       agents
     );
 
-  add(
-    vetoAgent
-  );
+  add(vetoAgent);
 
   const hasVeto =
     agents.some(
@@ -875,21 +916,26 @@ export function runAgents(
         "VETO"
     );
 
+  /*
+   * BASE SCORE
+   *
+   * Exclude synthesized agents from
+   * the base average.
+   */
+
   const baseAgents =
     agents.filter(
       (agent) =>
         agent.name !==
-        "Risk Veto"
+          "Risk Veto" &&
+        agent.name !==
+          "Agent Debate"
     );
 
   const averageScore =
     baseAgents.reduce(
-      (
-        sum,
-        agent
-      ) =>
-        sum +
-        agent.score,
+      (sum, agent) =>
+        sum + agent.score,
       0
     ) /
     Math.max(
@@ -897,54 +943,98 @@ export function runAgents(
       1
     );
 
+  /*
+   * FINAL SCORE
+   *
+   * 80% specialist analysis
+   * 20% agent debate
+   */
+
+  const combinedScore =
+    averageScore * 0.8 +
+    debate.score * 0.2;
+
   const finalScore =
     Math.round(
       Math.max(
         0,
         Math.min(
           100,
-          averageScore
+          combinedScore
         )
       )
     );
+
+  /*
+   * FINAL ACTION
+   */
 
   const action:
     FinalDecision["action"] =
     hasVeto
       ? "VETO"
       : finalScore >= 75
-      ? "BUY"
-      : finalScore <= 35
-      ? "SELL"
-      : "HOLD";
+        ? "BUY"
+        : finalScore <= 35
+          ? "SELL"
+          : "HOLD";
 
-  const finalAI:
-    AgentResult = {
-    name: "Final AI",
+  /*
+   * FINAL AI
+   */
 
-    status:
-      hasVeto
-        ? "VETO"
-        : finalScore >= 75
-        ? "PASS"
-        : "WARN",
+  const finalAI: AgentResult =
+    {
+      name: "Final AI",
 
-    score:
-      finalScore,
+      status:
+        hasVeto
+          ? "VETO"
+          : finalScore >= 75
+            ? "PASS"
+            : "WARN",
 
-    note:
-      hasVeto
-        ? "Final decision blocked by risk veto."
-        : `Final multi-agent score: ${finalScore}/100.`,
+      score:
+        finalScore,
 
-    data: {
-      action,
-    },
-  };
+      note:
+        hasVeto
+          ? "Final decision blocked by risk veto."
+          : `Final multi-agent score: ${finalScore}/100. Debate: ${debate.decision} (${debate.score}/100).`,
 
-  add(
-    finalAI
-  );
+      data: {
+        action,
+
+        specialistScore:
+          Math.round(
+            averageScore
+          ),
+
+        debateDecision:
+          debate.decision,
+
+        debateScore:
+          debate.score,
+
+        debateConfidence:
+          debate.confidence,
+
+        buyVotes:
+          debate.buyVotes,
+
+        holdVotes:
+          debate.holdVotes,
+
+        avoidVotes:
+          debate.avoidVotes,
+      },
+    };
+
+  add(finalAI);
+
+  /*
+   * REASONS
+   */
 
   const reasons =
     agents
@@ -967,6 +1057,10 @@ export function runAgents(
           `${agent.name}: ${agent.note}`
       );
 
+  reasons.push(
+    `Agent Debate: ${debate.summary}`
+  );
+
   return {
     agents,
 
@@ -984,11 +1078,9 @@ export function runAgents(
           ? 100
           : 0,
 
-      stopLossPct:
-        10,
+      stopLossPct: 10,
 
-      takeProfitPct:
-        20,
+      takeProfitPct: 20,
 
       reasons,
     },

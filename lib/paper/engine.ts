@@ -11,6 +11,7 @@ export type PaperPosition = {
 export type PaperTradeResult = {
   token: string;
   symbol: string;
+  chain: "solana" | "bsc" | "robinhood";
   entryPrice: number;
   exitPrice: number;
   quantity: number;
@@ -18,6 +19,7 @@ export type PaperTradeResult = {
   exitValueUsd: number;
   pnlUsd: number;
   pnlPct: number;
+  reason?: "TAKE_PROFIT" | "STOP_LOSS";
   openedAt: string;
   closedAt: string;
 };
@@ -50,7 +52,8 @@ export function openPaperPosition(
 
 export function closePaperPosition(
   position: PaperPosition,
-  exitPrice: number
+  exitPrice: number,
+  reason?: "TAKE_PROFIT" | "STOP_LOSS"
 ): PaperTradeResult {
   if (exitPrice <= 0) {
     throw new Error("Invalid exit price");
@@ -68,6 +71,7 @@ export function closePaperPosition(
   return {
     token: position.token,
     symbol: position.symbol,
+    chain: position.chain,
     entryPrice: position.entryPrice,
     exitPrice,
     quantity: position.quantity,
@@ -75,6 +79,7 @@ export function closePaperPosition(
     exitValueUsd,
     pnlUsd,
     pnlPct,
+    reason,
     openedAt: position.openedAt,
     closedAt: new Date().toISOString(),
   };

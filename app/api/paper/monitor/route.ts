@@ -12,7 +12,7 @@ import { getCurrentTokenPrice } from "../../../../lib/market";
 const CRON_SECRET = process.env.CRON_SECRET;
 
 async function runPaperMonitor() {
-  const account = getPaperAccount();
+  const account = await getPaperAccount();
 
   const checkedPositions = [];
   const closedTrades = [];
