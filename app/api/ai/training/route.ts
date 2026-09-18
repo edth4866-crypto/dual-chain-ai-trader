@@ -1,0 +1,100 @@
+import { NextResponse } from "next/server";
+import { supabase } from "../../../../lib/supabase";
+
+export async function GET() {
+  try {
+    const { data, error } = await supabase
+      .from("ai_training_data")
+      .select(`
+        id,
+        token,
+        symbol,
+        chain,
+        entry_price,
+        exit_price,
+        invested_usd,
+        exit_value_usd,
+        pnl_usd,
+        pnl_pct,
+        result_label,
+        opened_at,
+        closed_at
+      `)
+      .order("closed_at", { ascending: false });
+
+    if (error) {
+      console.error("AI training data error:", error);
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    const rows = data ?? [];
+
+    const total = rows.length;
+
+    const wins = rows.filter(
+      (row) => row.result_label === "WIN"
+    ).length;
+
+    const losses = rows.filter(
+      (row) => row.result_label === "LOSS"
+    ).length;
+
+    const neutral = rows.filter(
+      (row) => row.result_label === "NEUTRAL"
+    ).length;
+
+    const totalPnl = rows.reduce(
+      (sum, row) => sum + Number(row.pnl_usd || 0),
+      0
+    );
+
+    const averagePnlPct =
+      total > 0
+        ? rows.reduce(
+            (sum, row) => sum + Number(row.pnl_pct || 0),
+            0
+          ) / total
+        : 0;
+
+    const winRate =
+      total > 0
+        ? (wins / total) * 100
+        : 0;
+
+    return NextResponse.json({
+      success: true,
+
+      stats: {
+        total,
+        wins,
+        losses,
+        neutral,
+        winRate,
+        totalPnl,
+        averagePnlPct,
+      },
+
+      rows,
+    });
+  } catch (error) {
+    console.error("AI TRAINING API ERROR:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unknown error",
+      },
+      { status: 500 }
+    );
+  }
+}
