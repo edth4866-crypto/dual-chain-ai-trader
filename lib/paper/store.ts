@@ -772,6 +772,136 @@ export async function closePosition(
   }
 
   /*
+   * ============================================================
+   * AGENT ARENA OUTCOME
+   * ============================================================
+   *
+   * Connect the completed paper trade to every Agent
+   * that participated in the original decision.
+   *
+   * Only agents with an explicit predicted_action receive
+   * prediction_correct. Specialist agents keep it NULL
+   * because PASS/WARN are not directional predictions.
+   */
+
+  try {
+    const {
+      data: agentDecisions,
+      error: agentFetchError,
+    } = await supabase
+      .from("ai_agent_decisions")
+      .select(
+        "id, predicted_action"
+      )
+      .eq(
+        "paper_position_id",
+        position.id
+      );
+
+    if (agentFetchError) {
+      console.error(
+        "Agent Arena outcome fetch failed:",
+        agentFetchError
+      );
+    } else if (
+      agentDecisions &&
+      agentDecisions.length > 0
+    ) {
+      for (
+        const agentDecision
+        of agentDecisions
+      ) {
+        const predictedAction =
+          typeof agentDecision.predicted_action ===
+          "string"
+            ? agentDecision.predicted_action.toUpperCase()
+            : null;
+
+        let predictionCorrect:
+          | boolean
+          | null = null;
+
+        /*
+         * A BUY prediction is considered correct
+         * when the completed trade is profitable.
+         *
+         * A SELL / AVOID prediction is considered correct
+         * when the completed trade is not profitable.
+         *
+         * HOLD remains neutral.
+         */
+        if (
+          predictedAction ===
+          "BUY"
+        ) {
+          predictionCorrect =
+            trade.pnlPct > 0;
+        } else if (
+          predictedAction ===
+          "SELL" ||
+          predictedAction ===
+          "AVOID" ||
+          predictedAction ===
+          "VETO"
+        ) {
+          predictionCorrect =
+            trade.pnlPct <= 0;
+        }
+
+        const {
+          error:
+            agentUpdateError,
+        } = await supabase
+          .from(
+            "ai_agent_decisions"
+          )
+          .update({
+            paper_trade_id:
+              insertedTrade.id,
+
+            exit_price:
+              trade.exitPrice,
+
+            pnl_usd:
+              trade.pnlUsd,
+
+            pnl_pct:
+              trade.pnlPct,
+
+            prediction_correct:
+              predictionCorrect,
+
+            closed_at:
+              trade.closedAt,
+          })
+          .eq(
+            "id",
+            agentDecision.id
+          );
+
+        if (
+          agentUpdateError
+        ) {
+          console.error(
+            "Agent Arena outcome update failed:",
+            agentUpdateError
+          );
+        }
+      }
+    }
+  } catch (error) {
+    /*
+     * Agent Arena must never prevent
+     * the completed paper trade from
+     * being saved.
+     */
+    console.error(
+      "Agent Arena outcome error:",
+      error
+    );
+  }
+
+  /*
    * Return trade value to
    * paper account.
    */

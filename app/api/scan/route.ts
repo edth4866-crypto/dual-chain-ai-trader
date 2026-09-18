@@ -309,6 +309,98 @@ export async function POST(request: Request) {
           );
         }
 
+        /*
+         * ============================================================
+         * AGENT ARENA DECISIONS
+         * ============================================================
+         *
+         * 현재 Scan에서 생성된 모든 Agent의 판단을 저장한다.
+         *
+         * 아직 거래 결과가 발생하지 않았기 때문에
+         * paper_trade_id / pnl / outcome은 나중에 연결한다.
+         */
+
+        let agentDecisionIds: number[] = [];
+
+        try {
+          const agentRows = agents.map((agent) => {
+            const agentData = agent.data ?? {};
+
+            let predictedAction: string | null = null;
+
+            /*
+             * Synthesized agents have an
+             * explicit directional decision.
+             */
+
+            if (agent.name === "Agent Debate") {
+              const debateDecision = agentData.decision;
+
+              if (typeof debateDecision === "string") {
+                predictedAction = debateDecision;
+              }
+            } else if (agent.name === "Final AI") {
+              const finalAction = agentData.action;
+
+              if (typeof finalAction === "string") {
+                predictedAction = finalAction;
+              }
+            } else if (agent.name === "Risk Veto") {
+              predictedAction =
+                agent.status === "VETO"
+                  ? "VETO"
+                  : "HOLD";
+            }
+
+            return {
+              token: token.address,
+              symbol: token.symbol,
+              chain: token.chain,
+              agent_name: agent.name,
+              agent_status: agent.status,
+              agent_score: Number(agent.score ?? 0),
+              predicted_action: predictedAction,
+              agent_data: agentData,
+              entry_price: Number(token.priceUsd ?? 0),
+              paper_position_id: null,
+              paper_trade_id: null,
+              pnl_usd: null,
+              pnl_pct: null,
+              prediction_correct: null,
+              closed_at: null,
+            };
+          });
+
+          const {
+            data: insertedAgentRows,
+            error: agentInsertError,
+          } = await supabase
+            .from("ai_agent_decisions")
+            .insert(agentRows)
+            .select("id");
+
+          if (agentInsertError) {
+            console.error(
+              "Agent Arena decision save failed:",
+              agentInsertError
+            );
+          } else {
+            agentDecisionIds = (insertedAgentRows ?? [])
+              .map((row) => Number(row.id))
+              .filter((id) => Number.isFinite(id));
+          }
+        } catch (error) {
+          /*
+           * Agent Arena logging must never
+           * stop the main AI scan or Paper Trading.
+           */
+
+          console.error(
+            "Agent Arena logging error:",
+            error
+          );
+        }
+
         let paperTrade = null;
 
         /*
@@ -482,6 +574,42 @@ export async function POST(request: Request) {
                 console.error(
                   "AI decision to paper position link failed:",
                   linkError
+                );
+              }
+            }
+
+            /*
+             * Connect all Agent Arena decisions
+             * to the exact paper position.
+             */
+
+            if (
+              paperPositionId &&
+              agentDecisionIds.length > 0
+            ) {
+              const {
+                error: agentPositionLinkError,
+              } = await supabase
+                .from("ai_agent_decisions")
+                .update({
+                  paper_position_id:
+                    paperPositionId,
+                  entry_price:
+                    Number(
+                      token.priceUsd ?? 0
+                    ),
+                })
+                .in(
+                  "id",
+                  agentDecisionIds
+                );
+
+              if (
+                agentPositionLinkError
+              ) {
+                console.error(
+                  "Agent Arena to paper position link failed:",
+                  agentPositionLinkError
                 );
               }
             }
