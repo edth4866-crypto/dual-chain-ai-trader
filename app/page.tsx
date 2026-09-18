@@ -11,10 +11,11 @@ export default function Home() {
   const [account, setAccount] = useState<any>(null);
   const [accountLoading, setAccountLoading] = useState(false);
 
+  const [training, setTraining] = useState<any>(null);
+  const [trainingLoading, setTrainingLoading] = useState(false);
+
   const [language, setLanguage] =
     useState<'en' | 'ko'>('en');
-
-  const isKo = language === 'ko';
 
   const text = {
     en: {
@@ -35,6 +36,30 @@ export default function Home() {
       value: 'Value',
       unrealizedPnl: 'Unrealized P&L',
       closePosition: 'CLOSE POSITION',
+
+      aiTraining: '🧠 AI Training Dashboard',
+      trainingData: 'Training Data',
+      totalTrades: 'Total Trades',
+      wins: 'Wins',
+      losses: 'Losses',
+      neutral: 'Neutral',
+      winRate: 'Win Rate',
+      averagePnl: 'Average P&L',
+      trainingPnl: 'Training P&L',
+      aiDecisionResults: '🤖 AI Decision Results',
+      recentTraining: '📚 Recent Training Data',
+      samples: 'samples',
+      noTrainingData: 'No training data available.',
+      trainingUpdating: 'Updating AI training data...',
+      trainingAutoRefresh:
+        'Training data auto-refresh: 30 seconds',
+
+      modelStatus: 'AI Model Status',
+      dataCollection: 'DATA COLLECTION',
+      modelNotice:
+        'Paper trading results are being collected. The current dataset is still too small for statistically reliable AI model training.',
+      linkedDecisions: 'Linked AI Decisions',
+      unlinkedTrades: 'Unlinked Trades',
 
       multiChain: 'Multi-Chain AI Trader',
       description:
@@ -93,6 +118,30 @@ export default function Home() {
       value: '현재 가치',
       unrealizedPnl: '미실현 손익',
       closePosition: '포지션 종료',
+
+      aiTraining: '🧠 AI 학습 대시보드',
+      trainingData: '학습 데이터',
+      totalTrades: '전체 거래',
+      wins: '승리',
+      losses: '손실',
+      neutral: '중립',
+      winRate: '승률',
+      averagePnl: '평균 손익',
+      trainingPnl: '학습 데이터 손익',
+      aiDecisionResults: '🤖 AI 판단 결과',
+      recentTraining: '📚 최근 학습 데이터',
+      samples: '개 샘플',
+      noTrainingData: '학습 데이터가 없습니다.',
+      trainingUpdating: 'AI 학습 데이터 업데이트 중...',
+      trainingAutoRefresh:
+        '학습 데이터 자동 새로고침: 30초',
+
+      modelStatus: 'AI 모델 상태',
+      dataCollection: '데이터 수집 중',
+      modelNotice:
+        '현재 모의거래 결과를 계속 수집하고 있습니다. 현재 데이터는 실제 AI 모델 학습에 사용하기에는 아직 통계적으로 충분하지 않습니다.',
+      linkedDecisions: '연결된 AI 판단',
+      unlinkedTrades: '미연결 거래',
 
       multiChain: '멀티체인 AI 트레이더',
       description:
@@ -162,11 +211,39 @@ export default function Home() {
     }
   }
 
+  async function loadTraining() {
+    setTrainingLoading(true);
+
+    try {
+      const response = await fetch(
+        '/api/ai/training',
+        {
+          cache: 'no-store',
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        setTraining(data);
+      }
+    } catch (error) {
+      console.error(
+        'Failed to load AI training data:',
+        error
+      );
+    } finally {
+      setTrainingLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadAccount();
+    loadTraining();
 
     const interval = setInterval(() => {
       loadAccount();
+      loadTraining();
     }, 30000);
 
     return () => clearInterval(interval);
@@ -198,6 +275,7 @@ export default function Home() {
       }
 
       await loadAccount();
+      await loadTraining();
     } catch (error) {
       console.error(error);
     } finally {
@@ -256,6 +334,7 @@ export default function Home() {
       }
 
       await loadAccount();
+      await loadTraining();
     } catch (error) {
       console.error(
         'Failed to close paper position:',
@@ -298,6 +377,32 @@ export default function Home() {
       0
     );
 
+  const trainingStats =
+    training?.stats ?? {
+      total: 0,
+      wins: 0,
+      losses: 0,
+      neutral: 0,
+      winRate: 0,
+      totalPnl: 0,
+      averagePnlPct: 0,
+      linkedDecisions: 0,
+      unlinkedTrades: 0,
+    };
+
+  const trainingRows =
+    training?.rows ?? [];
+
+  const linkedDecisions =
+    Number(
+      trainingStats.linkedDecisions || 0
+    );
+
+  const unlinkedTrades =
+    Number(
+      trainingStats.unlinkedTrades || 0
+    );
+
   return (
     <main
       style={{
@@ -309,8 +414,6 @@ export default function Home() {
         color: '#111',
       }}
     >
-      {/* LANGUAGE SWITCH */}
-
       <div
         style={{
           display: 'flex',
@@ -342,8 +445,6 @@ export default function Home() {
           🌐 {t.languageButton}
         </button>
       </div>
-
-      {/* PAPER TRADING DASHBOARD */}
 
       <section
         style={{
@@ -645,6 +746,347 @@ export default function Home() {
             )}
           </div>
         )}
+      </section>
+
+      <section
+        style={{
+          background: '#0b0f14',
+          color: '#fff',
+          borderRadius: 18,
+          padding: 20,
+          marginBottom: 30,
+          boxShadow:
+            '0 8px 30px rgba(0,0,0,0.14)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent:
+              'space-between',
+            alignItems: 'center',
+            gap: 15,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 12,
+                color: '#60a5fa',
+                fontWeight: 800,
+                letterSpacing: 1,
+              }}
+            >
+              NOEUL AI
+            </div>
+
+            <h2
+              style={{
+                margin:
+                  '5px 0',
+                fontSize: 25,
+              }}
+            >
+              {t.aiTraining}
+            </h2>
+
+            <div
+              style={{
+                fontSize: 12,
+                opacity: 0.55,
+              }}
+            >
+              {trainingLoading
+                ? t.trainingUpdating
+                : t.trainingAutoRefresh}
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding:
+                '7px 12px',
+              borderRadius: 20,
+              background:
+                'rgba(59,130,246,0.15)',
+              border:
+                '1px solid rgba(96,165,250,0.35)',
+              color: '#93c5fd',
+              fontSize: 12,
+              fontWeight: 800,
+            }}
+          >
+            {trainingStats.total}{' '}
+            {t.samples}
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns:
+              'repeat(auto-fit, minmax(135px, 1fr))',
+            gap: 10,
+            marginTop: 20,
+          }}
+        >
+          <TrainingMetric
+            label={t.totalTrades}
+            value={String(
+              trainingStats.total
+            )}
+          />
+
+          <TrainingMetric
+            label={t.wins}
+            value={String(
+              trainingStats.wins
+            )}
+            valueColor="#22c55e"
+          />
+
+          <TrainingMetric
+            label={t.losses}
+            value={String(
+              trainingStats.losses
+            )}
+            valueColor="#ef4444"
+          />
+
+          <TrainingMetric
+            label={t.neutral}
+            value={String(
+              trainingStats.neutral
+            )}
+            valueColor="#eab308"
+          />
+
+          <TrainingMetric
+            label={t.winRate}
+            value={`${Number(
+              trainingStats.winRate || 0
+            ).toFixed(2)}%`}
+          />
+
+          <TrainingMetric
+            label={t.trainingPnl}
+            value={`$${Number(
+              trainingStats.totalPnl || 0
+            ).toFixed(2)}`}
+            valueColor={
+              Number(
+                trainingStats.totalPnl || 0
+              ) >= 0
+                ? '#22c55e'
+                : '#ef4444'
+            }
+          />
+
+          <TrainingMetric
+            label={t.averagePnl}
+            value={`${Number(
+              trainingStats.averagePnlPct || 0
+            ).toFixed(2)}%`}
+            valueColor={
+              Number(
+                trainingStats.averagePnlPct || 0
+              ) >= 0
+                ? '#22c55e'
+                : '#ef4444'
+            }
+          />
+        </div>
+
+        <div
+          style={{
+            marginTop: 25,
+          }}
+        >
+          <h3
+            style={{
+              marginBottom: 10,
+            }}
+          >
+            {t.aiDecisionResults}
+          </h3>
+
+          {trainingRows.length === 0 ? (
+            <div
+              style={{
+                padding: 16,
+                borderRadius: 10,
+                background: '#151b23',
+                opacity: 0.7,
+              }}
+            >
+              {t.noTrainingData}
+            </div>
+          ) : (
+            trainingRows
+              .slice(0, 10)
+              .map((row: any) => (
+                <div
+                  key={row.id}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      '1fr 100px 120px',
+                    gap: 10,
+                    alignItems: 'center',
+                    padding:
+                      '12px 0',
+                    borderBottom:
+                      '1px solid #202733',
+                  }}
+                >
+                  <div>
+                    <strong>
+                      {row.symbol}
+                    </strong>
+
+                    <div
+                      style={{
+                        marginTop: 3,
+                        fontSize: 11,
+                        opacity: 0.5,
+                      }}
+                    >
+                      {row.chain}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      textAlign:
+                        'center',
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color:
+                        row.result_label ===
+                        'WIN'
+                          ? '#22c55e'
+                          : row.result_label ===
+                            'LOSS'
+                          ? '#ef4444'
+                          : '#eab308',
+                    }}
+                  >
+                    {
+                      row.result_label
+                    }
+                  </div>
+
+                  <div
+                    style={{
+                      textAlign:
+                        'right',
+                      fontWeight: 800,
+                      color:
+                        Number(
+                          row.pnl_pct || 0
+                        ) >= 0
+                          ? '#22c55e'
+                          : '#ef4444',
+                    }}
+                  >
+                    {Number(
+                      row.pnl_pct || 0
+                    ) >= 0
+                      ? '+'
+                      : ''}
+                    {Number(
+                      row.pnl_pct || 0
+                    ).toFixed(2)}
+                    %
+                  </div>
+                </div>
+              ))
+          )}
+        </div>
+
+        <div
+          style={{
+            marginTop: 20,
+            padding: 14,
+            borderRadius: 10,
+            background: '#151b23',
+            border:
+              '1px solid #202733',
+            fontSize: 12,
+            lineHeight: 1.7,
+          }}
+        >
+          <strong>
+            {t.modelStatus}
+          </strong>
+
+          <div
+            style={{
+              marginTop: 6,
+              color: '#60a5fa',
+              fontWeight: 800,
+            }}
+          >
+            {t.dataCollection}
+          </div>
+
+          <div
+            style={{
+              marginTop: 8,
+              opacity: 0.65,
+            }}
+          >
+            {t.modelNotice}
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns:
+              'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 10,
+            marginTop: 10,
+          }}
+        >
+          <TrainingMetric
+            label={t.linkedDecisions}
+            value={String(
+              linkedDecisions
+            )}
+            valueColor="#60a5fa"
+          />
+
+          <TrainingMetric
+            label={t.unlinkedTrades}
+            value={String(
+              unlinkedTrades
+            )}
+            valueColor="#f59e0b"
+          />
+        </div>
+
+        <div
+          style={{
+            marginTop: 20,
+            padding: 14,
+            borderRadius: 10,
+            background: '#151b23',
+            border:
+              '1px solid #202733',
+            fontSize: 12,
+            lineHeight: 1.7,
+            opacity: 0.75,
+          }}
+        >
+          <strong>
+            {t.trainingData}
+          </strong>
+          <br />
+          {trainingStats.total}{' '}
+          {t.samples}
+        </div>
       </section>
 
       <h1
@@ -1320,6 +1762,50 @@ function DashboardMetric({
           marginTop: 5,
           fontSize: 21,
           fontWeight: 900,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function TrainingMetric({
+  label,
+  value,
+  valueColor = '#fff',
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+}) {
+  return (
+    <div
+      style={{
+        background: '#151b23',
+        borderRadius: 12,
+        padding: 14,
+        border:
+          '1px solid #202733',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          opacity: 0.5,
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          marginTop: 5,
+          fontSize: 21,
+          fontWeight: 900,
+          color: valueColor,
         }}
       >
         {value}
