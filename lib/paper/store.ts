@@ -74,15 +74,19 @@ function mapPosition(
     token: row.token,
     symbol: row.symbol,
     chain: row.chain,
+
     entryPrice: toNumber(
       row.entry_price
     ),
+
     quantity: toNumber(
       row.quantity
     ),
+
     investedUsd: toNumber(
       row.invested_usd
     ),
+
     openedAt: row.opened_at,
 
     marketSnapshot:
@@ -98,29 +102,39 @@ function mapTrade(
     token: row.token,
     symbol: row.symbol,
     chain: row.chain,
+
     entryPrice: toNumber(
       row.entry_price
     ),
+
     exitPrice: toNumber(
       row.exit_price
     ),
+
     quantity: toNumber(
       row.quantity
     ),
+
     investedUsd: toNumber(
       row.invested_usd
     ),
+
     exitValueUsd: toNumber(
       row.exit_value_usd
     ),
+
     pnlUsd: toNumber(
       row.pnl_usd
     ),
+
     pnlPct: toNumber(
       row.pnl_pct
     ),
+
     reason: row.reason,
+
     openedAt: row.opened_at,
+
     closedAt: row.closed_at,
   };
 }
@@ -308,14 +322,16 @@ export async function closePosition(
   }
 
   /*
-   * Preserve the market snapshot
-   * from the moment the position
-   * was opened.
+   * Preserve the original market
+   * snapshot from entry.
    */
   const marketSnapshot =
     position.market_snapshot ??
     null;
 
+  /*
+   * Remove the open position.
+   */
   const {
     error: deleteError,
   } = await supabase
@@ -329,6 +345,9 @@ export async function closePosition(
     );
   }
 
+  /*
+   * Save the completed paper trade.
+   */
   const {
     data: insertedTrade,
     error: tradeError,
@@ -381,6 +400,9 @@ export async function closePosition(
     );
   }
 
+  /*
+   * Determine the training label.
+   */
   const resultLabel =
     trade.pnlPct > 0
       ? "WIN"
@@ -390,18 +412,132 @@ export async function closePosition(
 
   /*
    * ============================================================
-   * AI TRAINING DATA
+   * AI TRAINING SNAPSHOT
    * ============================================================
    *
-   * Save:
-   *
-   * MARKET SNAPSHOT AT ENTRY
+   * Original entry market conditions
    * +
-   * ACTUAL TRADE RESULT
+   * Actual trade outcome
    *
    * This becomes the future ML dataset.
    */
 
+  const entryTime =
+    new Date(
+      trade.openedAt
+    ).getTime();
+
+  const exitTime =
+    new Date(
+      trade.closedAt
+    ).getTime();
+
+  /*
+   * Calculate actual holding time.
+   */
+  const holdingTimeMinutes =
+    Number.isFinite(entryTime) &&
+    Number.isFinite(exitTime) &&
+    exitTime >= entryTime
+      ? (
+          exitTime -
+          entryTime
+        ) / 60000
+      : 0;
+
+  /*
+   * Build the enriched training snapshot.
+   *
+   * The original market snapshot contains
+   * the AI's suggested position size.
+   *
+   * We preserve that value separately and
+   * replace positionUsd with the actual
+   * paper-trading investment amount.
+   */
+  const trainingSnapshot =
+    marketSnapshot
+      ? {
+          ...marketSnapshot,
+
+          /*
+           * Actual amount invested
+           * by Paper Trading.
+           */
+          positionUsd:
+            trade.investedUsd,
+
+          /*
+           * Original AI suggested
+           * position size.
+           */
+          aiSuggestedPositionUsd:
+            marketSnapshot.positionUsd ??
+            null,
+
+          /*
+           * Actual exit price.
+           */
+          exitPrice:
+            trade.exitPrice,
+
+          /*
+           * Actual final position value.
+           */
+          exitValueUsd:
+            trade.exitValueUsd,
+
+          /*
+           * Actual dollar P&L.
+           */
+          pnlUsd:
+            trade.pnlUsd,
+
+          /*
+           * Actual percentage P&L.
+           */
+          pnlPct:
+            trade.pnlPct,
+
+          /*
+           * WIN / LOSS / NEUTRAL.
+           */
+          resultLabel,
+
+          /*
+           * How long the position
+           * was held.
+           */
+          holdingTimeMinutes,
+
+          /*
+           * Entry price → exit price
+           * percentage movement.
+           */
+          entryToExitChangePct:
+            trade.entryPrice > 0
+              ? (
+                  (
+                    trade.exitPrice -
+                    trade.entryPrice
+                  ) /
+                  trade.entryPrice
+                ) *
+                100
+              : 0,
+
+          /*
+           * Exact moment the
+           * outcome was captured.
+           */
+          outcomeCapturedAt:
+            trade.closedAt,
+        }
+      : null;
+
+  /*
+   * Save the enriched AI training sample.
+   */
   const {
     error: trainingError,
   } = await supabase
@@ -444,11 +580,11 @@ export async function closePosition(
         trade.closedAt,
 
       /*
-       * The exact market state
-       * when AI entered the trade.
+       * Entry market conditions
+       * + actual outcome.
        */
       market_snapshot:
-        marketSnapshot,
+        trainingSnapshot,
     });
 
   if (trainingError) {
@@ -457,6 +593,10 @@ export async function closePosition(
     );
   }
 
+  /*
+   * Return the trade value
+   * to the paper account.
+   */
   const {
     data: account,
     error: accountError,
@@ -558,6 +698,12 @@ export async function getLivePaperPositions(): Promise<
               position.token
             );
 
+          /*
+           * If the market price cannot
+           * be retrieved, preserve the
+           * entry value instead of
+           * creating a false P&L.
+           */
           if (
             !Number.isFinite(
               currentPrice
@@ -590,8 +736,10 @@ export async function getLivePaperPositions(): Promise<
           const unrealizedPnlPct =
             position.investedUsd >
             0
-              ? (unrealizedPnlUsd /
-                  position.investedUsd) *
+              ? (
+                  unrealizedPnlUsd /
+                  position.investedUsd
+                ) *
                 100
               : 0;
 
