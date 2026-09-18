@@ -69,62 +69,54 @@ export async function POST(request: Request) {
          * ============================================================
          * MARKET SNAPSHOT
          * ============================================================
-         *
-         * AI가 이 토큰을 판단한 바로 그 순간의 시장 상태를 저장한다.
-         *
-         * 나중에 머신러닝 학습에서:
-         *
-         * 시장 상태 → AI 판단 → 실제 결과
-         *
-         * 관계를 분석할 수 있도록 만드는 핵심 데이터다.
          */
 
         const marketSnapshot = {
-          capturedAt: new Date().toISOString(),
+          capturedAt:
+            new Date().toISOString(),
 
           chain: token.chain,
 
-          priceUsd: Number(token.priceUsd ?? 0),
+          priceUsd:
+            Number(token.priceUsd ?? 0),
 
-          liquidityUsd: Number(
-            token.liquidityUsd ?? 0
-          ),
+          liquidityUsd:
+            Number(token.liquidityUsd ?? 0),
 
-          volume5mUsd: Number(
-            token.volume5mUsd ?? 0
-          ),
+          volume5mUsd:
+            Number(token.volume5mUsd ?? 0),
 
-          volume1hUsd: Number(
-            token.volume1hUsd ?? 0
-          ),
+          volume1hUsd:
+            Number(token.volume1hUsd ?? 0),
 
-          marketCapUsd: Number(
-            token.marketCapUsd ?? 0
-          ),
+          marketCapUsd:
+            Number(token.marketCapUsd ?? 0),
 
-          priceChange5mPct: Number(
-            token.priceChange5mPct ?? 0
-          ),
+          priceChange5mPct:
+            Number(
+              token.priceChange5mPct ?? 0
+            ),
 
-          priceChange1hPct: Number(
-            token.priceChange1hPct ?? 0
-          ),
+          priceChange1hPct:
+            Number(
+              token.priceChange1hPct ?? 0
+            ),
 
-          priceChange24hPct: Number(
-            token.priceChange24hPct ?? 0
-          ),
+          priceChange24hPct:
+            Number(
+              token.priceChange24hPct ?? 0
+            ),
 
-          buyCount5m: Number(
-            token.buyCount5m ?? 0
-          ),
+          buyCount5m:
+            Number(token.buyCount5m ?? 0),
 
-          sellCount5m: Number(
-            token.sellCount5m ?? 0
-          ),
+          sellCount5m:
+            Number(token.sellCount5m ?? 0),
 
-          top10HolderPct: Number(
-            token.top10HolderPct ?? 0
-          ),
+          top10HolderPct:
+            Number(
+              token.top10HolderPct ?? 0
+            ),
 
           mintAuthority:
             token.mintAuthority === true,
@@ -135,53 +127,59 @@ export async function POST(request: Request) {
           boostActive:
             token.boostActive === true,
 
-          boostAmount: Number(
-            token.boostAmount ?? 0
-          ),
+          boostAmount:
+            Number(
+              token.boostAmount ?? 0
+            ),
 
-          whalePercentageOfSupply: Number(
-            token.topHolders?.[0]
-              ?.percentageOfSupply ?? 0
-          ),
+          whalePercentageOfSupply:
+            Number(
+              token.topHolders?.[0]
+                ?.percentageOfSupply ?? 0
+            ),
 
-          largestWhaleAmount: Number(
-            token.topHolders?.[0]?.amount ?? 0
-          ),
+          largestWhaleAmount:
+            Number(
+              token.topHolders?.[0]?.amount ?? 0
+            ),
 
           topHolderCount:
             token.topHolders?.length ?? 0,
 
-          aiScore: Number(
-            decision.score ?? 0
-          ),
+          aiScore:
+            Number(decision.score ?? 0),
 
-          aiConfidence: Number(
-            decision.confidence ?? 0
-          ),
+          aiConfidence:
+            Number(
+              decision.confidence ?? 0
+            ),
 
           aiDecision:
             decision.action,
 
-          positionUsd: Number(
-            decision.positionUsd ?? 0
-          ),
+          positionUsd:
+            Number(
+              decision.positionUsd ?? 0
+            ),
 
-          stopLossPct: Number(
-            decision.stopLossPct ?? 0
-          ),
+          stopLossPct:
+            Number(
+              decision.stopLossPct ?? 0
+            ),
 
-          takeProfitPct: Number(
-            decision.takeProfitPct ?? 0
-          ),
+          takeProfitPct:
+            Number(
+              decision.takeProfitPct ?? 0
+            ),
 
           reasons:
             decision.reasons ?? [],
         };
 
         /*
+         * ============================================================
          * AI DECISION LOG
-         *
-         * Every scanned candidate is recorded.
+         * ============================================================
          */
 
         let decisionLog: {
@@ -236,13 +234,17 @@ export async function POST(request: Request) {
           } = await supabase
             .from("ai_decision_logs")
             .insert({
-              token: token.address,
+              token:
+                token.address,
 
-              symbol: token.symbol,
+              symbol:
+                token.symbol,
 
-              chain: token.chain,
+              chain:
+                token.chain,
 
-              decision: decision.action,
+              decision:
+                decision.action,
 
               final_score:
                 decision.score,
@@ -286,7 +288,9 @@ export async function POST(request: Request) {
           if (decisionLogError) {
             console.error(
               "AI decision log save failed:",
-              decisionLogError
+              JSON.stringify(
+                decisionLogError
+              )
             );
           } else if (
             insertedDecisionLog
@@ -298,11 +302,6 @@ export async function POST(request: Request) {
             };
           }
         } catch (error) {
-          /*
-           * Logging failure must NOT stop
-           * the AI scan or Paper Trading engine.
-           */
-
           console.error(
             "AI decision logging error:",
             error
@@ -311,89 +310,219 @@ export async function POST(request: Request) {
 
         /*
          * ============================================================
-         * AGENT ARENA DECISIONS
+         * AGENT ARENA
          * ============================================================
-         *
-         * 현재 Scan에서 생성된 모든 Agent의 판단을 저장한다.
-         *
-         * 아직 거래 결과가 발생하지 않았기 때문에
-         * paper_trade_id / pnl / outcome은 나중에 연결한다.
          */
 
         let agentDecisionIds: number[] = [];
 
+        let agentArenaError:
+          | string
+          | null = null;
+
         try {
-          const agentRows = agents.map((agent) => {
-            const agentData = agent.data ?? {};
+          /*
+           * Convert Agent data into guaranteed
+           * JSON-safe data before sending it
+           * to Supabase JSONB.
+           */
 
-            let predictedAction: string | null = null;
+          const agentRows =
+            agents.map((agent) => {
+              let agentData: Record<
+                string,
+                unknown
+              > = {};
 
-            /*
-             * Synthesized agents have an
-             * explicit directional decision.
-             */
+              try {
+                const rawData =
+                  agent.data ?? {};
 
-            if (agent.name === "Agent Debate") {
-              const debateDecision = agentData.decision;
+                agentData =
+                  JSON.parse(
+                    JSON.stringify(
+                      rawData
+                    )
+                  );
+              } catch (error) {
+                console.error(
+                  "Agent data JSON conversion failed:",
+                  error
+                );
 
-              if (typeof debateDecision === "string") {
-                predictedAction = debateDecision;
+                agentData = {};
               }
-            } else if (agent.name === "Final AI") {
-              const finalAction = agentData.action;
 
-              if (typeof finalAction === "string") {
-                predictedAction = finalAction;
+              let predictedAction:
+                | string
+                | null = null;
+
+              /*
+               * Agent Debate
+               */
+
+              if (
+                agent.name ===
+                "Agent Debate"
+              ) {
+                const debateDecision =
+                  agentData.decision;
+
+                if (
+                  typeof debateDecision ===
+                  "string"
+                ) {
+                  predictedAction =
+                    debateDecision;
+                }
               }
-            } else if (agent.name === "Risk Veto") {
-              predictedAction =
-                agent.status === "VETO"
-                  ? "VETO"
-                  : "HOLD";
-            }
 
-            return {
-              token: token.address,
-              symbol: token.symbol,
-              chain: token.chain,
-              agent_name: agent.name,
-              agent_status: agent.status,
-              agent_score: Number(agent.score ?? 0),
-              predicted_action: predictedAction,
-              agent_data: agentData,
-              entry_price: Number(token.priceUsd ?? 0),
-              paper_position_id: null,
-              paper_trade_id: null,
-              pnl_usd: null,
-              pnl_pct: null,
-              prediction_correct: null,
-              closed_at: null,
-            };
-          });
+              /*
+               * Final AI
+               */
+
+              else if (
+                agent.name ===
+                "Final AI"
+              ) {
+                const finalAction =
+                  agentData.action;
+
+                if (
+                  typeof finalAction ===
+                  "string"
+                ) {
+                  predictedAction =
+                    finalAction;
+                }
+              }
+
+              /*
+               * Risk Veto
+               */
+
+              else if (
+                agent.name ===
+                "Risk Veto"
+              ) {
+                predictedAction =
+                  agent.status ===
+                  "VETO"
+                    ? "VETO"
+                    : "HOLD";
+              }
+
+              return {
+                token:
+                  token.address,
+
+                symbol:
+                  token.symbol,
+
+                chain:
+                  token.chain,
+
+                agent_name:
+                  agent.name,
+
+                agent_status:
+                  agent.status,
+
+                agent_score:
+                  Number(
+                    agent.score ?? 0
+                  ),
+
+                predicted_action:
+                  predictedAction,
+
+                agent_data:
+                  agentData,
+
+                entry_price:
+                  Number(
+                    token.priceUsd ?? 0
+                  ),
+
+                paper_position_id:
+                  null,
+
+                paper_trade_id:
+                  null,
+
+                pnl_usd:
+                  null,
+
+                pnl_pct:
+                  null,
+
+                prediction_correct:
+                  null,
+
+                closed_at:
+                  null,
+              };
+            });
+
+          /*
+           * Important:
+           * Insert ALL agents generated
+           * during this scan.
+           */
 
           const {
             data: insertedAgentRows,
             error: agentInsertError,
           } = await supabase
-            .from("ai_agent_decisions")
+            .from(
+              "ai_agent_decisions"
+            )
             .insert(agentRows)
             .select("id");
 
           if (agentInsertError) {
+            const errorMessage =
+              JSON.stringify(
+                agentInsertError
+              );
+
+            agentArenaError =
+              errorMessage;
+
             console.error(
               "Agent Arena decision save failed:",
-              agentInsertError
+              errorMessage
             );
           } else {
-            agentDecisionIds = (insertedAgentRows ?? [])
-              .map((row) => Number(row.id))
-              .filter((id) => Number.isFinite(id));
+            agentDecisionIds =
+              (
+                insertedAgentRows ??
+                []
+              )
+                .map((row) =>
+                  Number(row.id)
+                )
+                .filter((id) =>
+                  Number.isFinite(id)
+                );
+
+            console.log(
+              "Agent Arena saved:",
+              {
+                token:
+                  token.symbol,
+                count:
+                  agentDecisionIds.length,
+                ids:
+                  agentDecisionIds,
+              }
+            );
           }
         } catch (error) {
-          /*
-           * Agent Arena logging must never
-           * stop the main AI scan or Paper Trading.
-           */
+          agentArenaError =
+            error instanceof Error
+              ? error.message
+              : String(error);
 
           console.error(
             "Agent Arena logging error:",
@@ -407,19 +536,11 @@ export async function POST(request: Request) {
          * ============================================================
          * PAPER TRADING
          * ============================================================
-         *
-         * Safety rules:
-         *
-         * 1. BUY decision required
-         * 2. Valid price required
-         * 3. Never open duplicate position
-         * 4. Fixed $10 paper position
-         * 5. Never exceed paper balance
-         * 6. No real funds are used
          */
 
         if (
-          decision.action === "BUY" &&
+          decision.action ===
+            "BUY" &&
           token.priceUsd > 0
         ) {
           const existingPosition =
@@ -430,7 +551,12 @@ export async function POST(request: Request) {
           const account =
             await getPaperAccount();
 
-          const paperPositionUsd = 10;
+          /*
+           * Fixed $10 paper position.
+           */
+
+          const paperPositionUsd =
+            10;
 
           const scorePass =
             decision.score >= 70;
@@ -440,17 +566,19 @@ export async function POST(request: Request) {
             10000;
 
           const holderPass =
-            (token.top10HolderPct ?? 100) <=
-            60;
+            (token.top10HolderPct ??
+              100) <= 60;
 
           const whalePass =
             (token.topHolders?.[0]
-              ?.percentageOfSupply ?? 100) <=
-            30;
+              ?.percentageOfSupply ??
+              100) <= 30;
 
           const contractRiskPass =
-            token.mintAuthority !== true &&
-            token.freezeAuthority !== true;
+            token.mintAuthority !==
+              true &&
+            token.freezeAuthority !==
+              true;
 
           const riskGatePass =
             scorePass &&
@@ -462,11 +590,20 @@ export async function POST(request: Request) {
           if (existingPosition) {
             paperTrade = {
               action: "SKIP",
+
               reason:
                 "Existing open position",
+
               existingPosition,
+
+              agentArenaCount:
+                agentDecisionIds.length,
+
+              agentArenaError,
             };
-          } else if (!riskGatePass) {
+          } else if (
+            !riskGatePass
+          ) {
             const failedChecks: string[] =
               [];
 
@@ -494,7 +631,9 @@ export async function POST(request: Request) {
               );
             }
 
-            if (!contractRiskPass) {
+            if (
+              !contractRiskPass
+            ) {
               failedChecks.push(
                 "Contract risk detected"
               );
@@ -502,9 +641,16 @@ export async function POST(request: Request) {
 
             paperTrade = {
               action: "SKIP",
+
               reason:
                 "Risk Gate rejected",
+
               failedChecks,
+
+              agentArenaCount:
+                agentDecisionIds.length,
+
+              agentArenaError,
             };
           } else if (
             paperPositionUsd >
@@ -512,34 +658,42 @@ export async function POST(request: Request) {
           ) {
             paperTrade = {
               action: "SKIP",
+
               reason:
                 "Insufficient paper cash",
+
+              agentArenaCount:
+                agentDecisionIds.length,
+
+              agentArenaError,
             };
           } else {
             const position =
               openPaperPosition(
                 token.address,
+
                 token.symbol,
+
                 token.chain === "bsc"
                   ? "bsc"
                   : "solana",
+
                 token.priceUsd,
+
                 paperPositionUsd
               );
 
             /*
-             * Save the market snapshot directly
-             * into the paper position.
-             *
-             * This gives us the exact market
-             * conditions at the moment of entry.
+             * Save exact market conditions
+             * at entry.
              */
 
-            const positionWithSnapshot = {
-              ...position,
+            const positionWithSnapshot =
+              {
+                ...position,
 
-              marketSnapshot,
-            };
+                marketSnapshot,
+              };
 
             const paperPositionId =
               await addPosition(
@@ -547,8 +701,9 @@ export async function POST(request: Request) {
               );
 
             /*
-             * Connect the exact AI decision
-             * to the newly created paper position.
+             * ========================================================
+             * LINK AI DECISION LOG
+             * ========================================================
              */
 
             if (
@@ -579,24 +734,35 @@ export async function POST(request: Request) {
             }
 
             /*
-             * Connect all Agent Arena decisions
-             * to the exact paper position.
+             * ========================================================
+             * LINK AGENT ARENA
+             * ========================================================
              */
+
+            let agentPositionLinkError:
+              | string
+              | null = null;
 
             if (
               paperPositionId &&
-              agentDecisionIds.length > 0
+              agentDecisionIds.length >
+                0
             ) {
               const {
-                error: agentPositionLinkError,
+                error:
+                  arenaLinkError,
               } = await supabase
-                .from("ai_agent_decisions")
+                .from(
+                  "ai_agent_decisions"
+                )
                 .update({
                   paper_position_id:
                     paperPositionId,
+
                   entry_price:
                     Number(
-                      token.priceUsd ?? 0
+                      token.priceUsd ??
+                        0
                     ),
                 })
                 .in(
@@ -605,8 +771,13 @@ export async function POST(request: Request) {
                 );
 
               if (
-                agentPositionLinkError
+                arenaLinkError
               ) {
+                agentPositionLinkError =
+                  JSON.stringify(
+                    arenaLinkError
+                  );
+
                 console.error(
                   "Agent Arena to paper position link failed:",
                   agentPositionLinkError
@@ -628,11 +799,30 @@ export async function POST(request: Request) {
 
               marketSnapshot,
 
+              /*
+               * Agent Arena debugging/
+               * verification information.
+               */
+
+              agentArenaCount:
+                agentDecisionIds.length,
+
+              agentArenaIds:
+                agentDecisionIds,
+
+              agentArenaError,
+
+              agentPositionLinkError,
+
               riskGate: {
                 scorePass,
+
                 liquidityPass,
+
                 holderPass,
+
                 whalePass,
+
                 contractRiskPass,
               },
             };
@@ -665,6 +855,26 @@ export async function POST(request: Request) {
             token.chain,
 
           paperTrade,
+
+          /*
+           * Agent Arena status is also
+           * returned even when no paper
+           * trade was opened.
+           */
+
+          agentArena: {
+            savedCount:
+              agentDecisionIds.length,
+
+            expectedCount:
+              agents.length,
+
+            ids:
+              agentDecisionIds,
+
+            error:
+              agentArenaError,
+          },
 
           candidateRank:
             token.candidateRank ?? 0,
@@ -793,7 +1003,9 @@ export async function POST(request: Request) {
     );
 
     /*
-     * Final AI score sorting
+     * ================================================================
+     * FINAL AI SCORE SORTING
+     * ================================================================
      */
 
     analyzed.sort(
@@ -802,7 +1014,9 @@ export async function POST(request: Request) {
     );
 
     /*
-     * Final ranking
+     * ================================================================
+     * FINAL RANKING
+     * ================================================================
      */
 
     const finalCandidates =
