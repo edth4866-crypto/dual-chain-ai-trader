@@ -67,6 +67,213 @@ function toNumber(value: unknown): number {
     : 0;
 }
 
+/*
+ * ============================================================
+ * AI FEATURE ENGINEERING
+ * ============================================================
+ *
+ * Converts raw entry-time market data into numerical
+ * features that can later be used by XGBoost / ML.
+ *
+ * IMPORTANT:
+ * These features must only use information available
+ * at the moment the paper position was opened.
+ *
+ * Exit price / P&L / result are NOT used as input features.
+ */
+function buildTrainingFeatures(
+  snapshot: MarketSnapshot
+) {
+  const buyCount =
+    toNumber(snapshot.buyCount5m);
+
+  const sellCount =
+    toNumber(snapshot.sellCount5m);
+
+  const totalTrades =
+    buyCount + sellCount;
+
+  /*
+   * Buy pressure:
+   * 0 = all sells
+   * 1 = all buys
+   */
+  const buyPressure =
+    totalTrades > 0
+      ? buyCount / totalTrades
+      : 0;
+
+  /*
+   * Sell pressure:
+   * 0 = all buys
+   * 1 = all sells
+   */
+  const sellPressure =
+    totalTrades > 0
+      ? sellCount / totalTrades
+      : 0;
+
+  /*
+   * Compare 5-minute volume with the
+   * average 5-minute volume implied by
+   * the previous 1-hour volume.
+   */
+  const volumeAcceleration =
+    snapshot.volume1hUsd > 0
+      ? snapshot.volume5mUsd /
+        (snapshot.volume1hUsd / 12)
+      : 0;
+
+  /*
+   * Liquidity relative to market cap.
+   */
+  const liquidityToMarketCap =
+    snapshot.marketCapUsd > 0
+      ? snapshot.liquidityUsd /
+        snapshot.marketCapUsd
+      : 0;
+
+  /*
+   * Whale concentration risk.
+   *
+   * 0 = low
+   * 1 = very high
+   */
+  const whaleRisk =
+    Math.min(
+      Math.max(
+        snapshot.whalePercentageOfSupply / 100,
+        0
+      ),
+      1
+    );
+
+  /*
+   * Top-10 holder concentration risk.
+   */
+  const holderConcentrationRisk =
+    Math.min(
+      Math.max(
+        snapshot.top10HolderPct / 100,
+        0
+      ),
+      1
+    );
+
+  /*
+   * Weighted momentum indicator.
+   *
+   * Short-term movement gets lower weight
+   * than 1-hour movement.
+   */
+  const momentumScore =
+    snapshot.priceChange5mPct * 0.25 +
+    snapshot.priceChange1hPct * 0.5 +
+    snapshot.priceChange24hPct * 0.25;
+
+  /*
+   * AI confidence adjusted by AI score.
+   */
+  const aiConfidenceScore =
+    snapshot.aiScore *
+    snapshot.aiConfidence;
+
+  return {
+    /*
+     * Feature version allows us to change
+     * the feature formula later without
+     * losing track of which version was used.
+     */
+    featureVersion: 1,
+
+    priceUsd:
+      snapshot.priceUsd,
+
+    liquidityUsd:
+      snapshot.liquidityUsd,
+
+    volume5mUsd:
+      snapshot.volume5mUsd,
+
+    volume1hUsd:
+      snapshot.volume1hUsd,
+
+    marketCapUsd:
+      snapshot.marketCapUsd,
+
+    priceChange5mPct:
+      snapshot.priceChange5mPct,
+
+    priceChange1hPct:
+      snapshot.priceChange1hPct,
+
+    priceChange24hPct:
+      snapshot.priceChange24hPct,
+
+    buyCount5m:
+      buyCount,
+
+    sellCount5m:
+      sellCount,
+
+    buyPressure,
+
+    sellPressure,
+
+    volumeAcceleration,
+
+    liquidityToMarketCap,
+
+    top10HolderPct:
+      snapshot.top10HolderPct,
+
+    whalePercentageOfSupply:
+      snapshot.whalePercentageOfSupply,
+
+    whaleRisk,
+
+    holderConcentrationRisk,
+
+    largestWhaleAmount:
+      snapshot.largestWhaleAmount,
+
+    topHolderCount:
+      snapshot.topHolderCount,
+
+    /*
+     * Boolean values are converted to
+     * numerical values for ML.
+     */
+    mintAuthority:
+      snapshot.mintAuthority
+        ? 1
+        : 0,
+
+    freezeAuthority:
+      snapshot.freezeAuthority
+        ? 1
+        : 0,
+
+    boostActive:
+      snapshot.boostActive
+        ? 1
+        : 0,
+
+    boostAmount:
+      snapshot.boostAmount,
+
+    aiScore:
+      snapshot.aiScore,
+
+    aiConfidence:
+      snapshot.aiConfidence,
+
+    aiConfidenceScore,
+
+    momentumScore,
+  };
+}
+
 function mapPosition(
   row: any
 ): StoredPaperPosition {
@@ -246,10 +453,6 @@ export async function addPosition(
       opened_at:
         position.openedAt,
 
-      /*
-       * Save the exact market
-       * conditions at entry.
-       */
       market_snapshot:
         position.marketSnapshot ??
         null,
@@ -322,8 +525,8 @@ export async function closePosition(
   }
 
   /*
-   * Preserve the original market
-   * snapshot from entry.
+   * Preserve original entry-time
+   * market conditions.
    */
   const marketSnapshot =
     position.market_snapshot ??
@@ -346,7 +549,7 @@ export async function closePosition(
   }
 
   /*
-   * Save the completed paper trade.
+   * Save completed paper trade.
    */
   const {
     data: insertedTrade,
@@ -401,7 +604,7 @@ export async function closePosition(
   }
 
   /*
-   * Determine the training label.
+   * Determine training label.
    */
   const resultLabel =
     trade.pnlPct > 0
@@ -409,18 +612,6 @@ export async function closePosition(
       : trade.pnlPct < 0
         ? "LOSS"
         : "NEUTRAL";
-
-  /*
-   * ============================================================
-   * AI TRAINING SNAPSHOT
-   * ============================================================
-   *
-   * Original entry market conditions
-   * +
-   * Actual trade outcome
-   *
-   * This becomes the future ML dataset.
-   */
 
   const entryTime =
     new Date(
@@ -432,9 +623,6 @@ export async function closePosition(
       trade.closedAt
     ).getTime();
 
-  /*
-   * Calculate actual holding time.
-   */
   const holdingTimeMinutes =
     Number.isFinite(entryTime) &&
     Number.isFinite(exitTime) &&
@@ -446,74 +634,41 @@ export async function closePosition(
       : 0;
 
   /*
-   * Build the enriched training snapshot.
+   * ============================================================
+   * AI TRAINING SNAPSHOT
+   * ============================================================
    *
-   * The original market snapshot contains
-   * the AI's suggested position size.
-   *
-   * We preserve that value separately and
-   * replace positionUsd with the actual
-   * paper-trading investment amount.
+   * Raw entry conditions +
+   * actual outcome.
    */
   const trainingSnapshot =
     marketSnapshot
       ? {
           ...marketSnapshot,
 
-          /*
-           * Actual amount invested
-           * by Paper Trading.
-           */
           positionUsd:
             trade.investedUsd,
 
-          /*
-           * Original AI suggested
-           * position size.
-           */
           aiSuggestedPositionUsd:
             marketSnapshot.positionUsd ??
             null,
 
-          /*
-           * Actual exit price.
-           */
           exitPrice:
             trade.exitPrice,
 
-          /*
-           * Actual final position value.
-           */
           exitValueUsd:
             trade.exitValueUsd,
 
-          /*
-           * Actual dollar P&L.
-           */
           pnlUsd:
             trade.pnlUsd,
 
-          /*
-           * Actual percentage P&L.
-           */
           pnlPct:
             trade.pnlPct,
 
-          /*
-           * WIN / LOSS / NEUTRAL.
-           */
           resultLabel,
 
-          /*
-           * How long the position
-           * was held.
-           */
           holdingTimeMinutes,
 
-          /*
-           * Entry price → exit price
-           * percentage movement.
-           */
           entryToExitChangePct:
             trade.entryPrice > 0
               ? (
@@ -526,17 +681,34 @@ export async function closePosition(
                 100
               : 0,
 
-          /*
-           * Exact moment the
-           * outcome was captured.
-           */
           outcomeCapturedAt:
             trade.closedAt,
         }
       : null;
 
   /*
-   * Save the enriched AI training sample.
+   * ============================================================
+   * AI FEATURES
+   * ============================================================
+   *
+   * IMPORTANT:
+   * Only entry-time information is used.
+   *
+   * No exit price.
+   * No P&L.
+   * No result label.
+   *
+   * This prevents data leakage.
+   */
+  const trainingFeatures =
+    marketSnapshot
+      ? buildTrainingFeatures(
+          marketSnapshot
+        )
+      : null;
+
+  /*
+   * Save AI training sample.
    */
   const {
     error: trainingError,
@@ -580,11 +752,17 @@ export async function closePosition(
         trade.closedAt,
 
       /*
-       * Entry market conditions
+       * Original entry conditions
        * + actual outcome.
        */
       market_snapshot:
         trainingSnapshot,
+
+      /*
+       * Machine-learning features.
+       */
+      features:
+        trainingFeatures,
     });
 
   if (trainingError) {
@@ -594,8 +772,8 @@ export async function closePosition(
   }
 
   /*
-   * Return the trade value
-   * to the paper account.
+   * Return trade value to
+   * paper account.
    */
   const {
     data: account,
@@ -698,12 +876,6 @@ export async function getLivePaperPositions(): Promise<
               position.token
             );
 
-          /*
-           * If the market price cannot
-           * be retrieved, preserve the
-           * entry value instead of
-           * creating a false P&L.
-           */
           if (
             !Number.isFinite(
               currentPrice
