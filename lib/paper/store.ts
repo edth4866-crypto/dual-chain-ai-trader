@@ -295,6 +295,10 @@ function mapPosition(
       row.invested_usd
     ),
 
+    buyFeeUsd: toNumber(
+      row.buy_fee_usd
+    ),
+
     openedAt: row.opened_at,
 
     marketSnapshot:
@@ -337,6 +341,18 @@ function mapTrade(
 
     pnlPct: toNumber(
       row.pnl_pct
+    ),
+
+    buyFeeUsd: toNumber(
+      row.buy_fee_usd
+    ),
+
+    sellFeeUsd: toNumber(
+      row.sell_fee_usd
+    ),
+
+    totalFeeUsd: toNumber(
+      row.total_fee_usd
     ),
 
     reason: row.reason,
@@ -460,6 +476,9 @@ export async function addPosition(
       p_invested_usd:
         position.investedUsd,
 
+      p_buy_fee_usd:
+        position.buyFeeUsd,
+
       p_opened_at:
         position.openedAt,
 
@@ -571,6 +590,15 @@ export async function closePosition(
 
       p_pnl_pct:
         trade.pnlPct,
+
+      p_buy_fee_usd:
+        trade.buyFeeUsd,
+
+      p_sell_fee_usd:
+        trade.sellFeeUsd,
+
+      p_total_fee_usd:
+        trade.totalFeeUsd,
 
       p_reason:
         trade.reason ?? null,

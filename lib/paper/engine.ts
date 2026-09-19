@@ -5,6 +5,7 @@ export type PaperPosition = {
   entryPrice: number;
   quantity: number;
   investedUsd: number;
+  buyFeeUsd: number;
   openedAt: string;
 };
 
@@ -19,12 +20,16 @@ export type PaperTradeResult = {
   exitValueUsd: number;
   pnlUsd: number;
   pnlPct: number;
+  buyFeeUsd: number;
+  sellFeeUsd: number;
+  totalFeeUsd: number;
   reason?: "TAKE_PROFIT" | "STOP_LOSS";
   openedAt: string;
   closedAt: string;
 };
 
 const PAPER_SLIPPAGE_PCT = 3.0;
+const PAPER_TRADING_FEE_PCT = 0.3;
 
 export function openPaperPosition(
   token: string,
@@ -42,14 +47,17 @@ export function openPaperPosition(
   }
 
   /*
-   * Simulate market BUY slippage.
-   *
-   * Example:
-   * market price = $1.00
-   * 0.5% slippage -> fill price = $1.005
-   *
-   * investedUsd remains the total cash committed.
+   * positionUsd is the TOTAL cash committed.
+   * BUY fee is deducted first, then the remaining
+   * cash buys tokens at the slippage-adjusted price.
    */
+  const buyFeeUsd =
+    positionUsd *
+    (PAPER_TRADING_FEE_PCT / 100);
+
+  const buyValueUsd =
+    positionUsd - buyFeeUsd;
+
   const executedEntryPrice =
     priceUsd *
     (1 + PAPER_SLIPPAGE_PCT / 100);
@@ -60,8 +68,9 @@ export function openPaperPosition(
     chain,
     entryPrice: executedEntryPrice,
     quantity:
-      positionUsd / executedEntryPrice,
+      buyValueUsd / executedEntryPrice,
     investedUsd: positionUsd,
+    buyFeeUsd,
     openedAt: new Date().toISOString(),
   };
 }
@@ -76,19 +85,26 @@ export function closePaperPosition(
   }
 
   /*
-   * Simulate market SELL slippage.
-   *
-   * Example:
-   * market price = $1.00
-   * 0.5% slippage -> fill price = $0.995
+   * SELL slippage is applied first.
+   * SELL fee is then deducted from gross proceeds.
    */
   const executedExitPrice =
     exitPrice *
     (1 - PAPER_SLIPPAGE_PCT / 100);
 
-  const exitValueUsd =
+  const grossExitValueUsd =
     position.quantity *
     executedExitPrice;
+
+  const sellFeeUsd =
+    grossExitValueUsd *
+    (PAPER_TRADING_FEE_PCT / 100);
+
+  const exitValueUsd =
+    grossExitValueUsd - sellFeeUsd;
+
+  const totalFeeUsd =
+    position.buyFeeUsd + sellFeeUsd;
 
   const pnlUsd =
     exitValueUsd - position.investedUsd;
@@ -107,6 +123,9 @@ export function closePaperPosition(
     exitValueUsd,
     pnlUsd,
     pnlPct,
+    buyFeeUsd: position.buyFeeUsd,
+    sellFeeUsd,
+    totalFeeUsd,
     reason,
     openedAt: position.openedAt,
     closedAt: new Date().toISOString(),
@@ -138,9 +157,17 @@ export function checkPaperExit(
     currentPrice *
     (1 - PAPER_SLIPPAGE_PCT / 100);
 
-  const expectedExitValueUsd =
+  const expectedGrossExitValueUsd =
     position.quantity *
     expectedExitPrice;
+
+  const expectedSellFeeUsd =
+    expectedGrossExitValueUsd *
+    (PAPER_TRADING_FEE_PCT / 100);
+
+  const expectedExitValueUsd =
+    expectedGrossExitValueUsd -
+    expectedSellFeeUsd;
 
   const expectedPnlPct =
     position.investedUsd > 0
