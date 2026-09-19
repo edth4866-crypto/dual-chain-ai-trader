@@ -14,6 +14,9 @@ export default function Home() {
   const [training, setTraining] = useState<any>(null);
   const [trainingLoading, setTrainingLoading] = useState(false);
 
+  const [agentPerformance, setAgentPerformance] = useState<any>(null);
+  const [agentPerformanceLoading, setAgentPerformanceLoading] = useState(false);
+
   const [language, setLanguage] =
     useState<'en' | 'ko'>('en');
 
@@ -55,6 +58,15 @@ export default function Home() {
         'Training data auto-refresh: 30 seconds',
 
       modelStatus: 'AI Model Status',
+      agentArena: '🏟️ Agent Arena',
+      agentArenaDescription: 'Independent agent performance tracking',
+      evaluatedTrades: 'Evaluated Trades',
+      correct: 'Correct',
+      wrong: 'Wrong',
+      decisions: 'Decisions',
+      avgPnl: 'Avg P&L',
+      noAgentData: 'No agent performance data available.',
+      agentArenaUpdating: 'Updating agent performance...',
       dataCollection: 'DATA COLLECTION',
       modelNotice:
         'Paper trading results are being collected. The current dataset is still too small for statistically reliable AI model training.',
@@ -137,6 +149,15 @@ export default function Home() {
         '학습 데이터 자동 새로고침: 30초',
 
       modelStatus: 'AI 모델 상태',
+      agentArena: '🏟️ Agent Arena',
+      agentArenaDescription: '에이전트별 독립 성과 추적',
+      evaluatedTrades: '평가 거래',
+      correct: '정답',
+      wrong: '오답',
+      decisions: '판단 수',
+      avgPnl: '평균 손익',
+      noAgentData: '에이전트 성과 데이터가 없습니다.',
+      agentArenaUpdating: '에이전트 성과 업데이트 중...',
       dataCollection: '데이터 수집 중',
       modelNotice:
         '현재 모의거래 결과를 계속 수집하고 있습니다. 현재 데이터는 실제 AI 모델 학습에 사용하기에는 아직 통계적으로 충분하지 않습니다.',
@@ -237,13 +258,61 @@ export default function Home() {
     }
   }
 
+  async function loadAgentPerformance() {
+    setAgentPerformanceLoading(true);
+
+    try {
+      const [performanceResponse, rewardsResponse] =
+        await Promise.all([
+          fetch('/api/agents/performance', {
+            cache: 'no-store',
+          }),
+          fetch('/api/agents/rewards', {
+            cache: 'no-store',
+          }),
+        ]);
+
+      const performanceData = await performanceResponse.json();
+      const rewardsData = await rewardsResponse.json();
+
+      if (performanceData.ok) {
+        const rewardMap = new Map(
+          (rewardsData.agents || []).map((reward: any) => [
+            reward.agentName,
+            reward,
+          ])
+        );
+
+        setAgentPerformance({
+          ...performanceData,
+          agents: (performanceData.agents || []).map(
+            (agent: any) => ({
+              ...agent,
+              rewardState:
+                rewardMap.get(agent.agent_name) || null,
+            })
+          ),
+        });
+      }
+    } catch (error) {
+      console.error(
+        'Failed to load agent performance:',
+        error
+      );
+    } finally {
+      setAgentPerformanceLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadAccount();
     loadTraining();
+    loadAgentPerformance();
 
     const interval = setInterval(() => {
       loadAccount();
       loadTraining();
+      loadAgentPerformance();
     }, 30000);
 
     return () => clearInterval(interval);
@@ -375,6 +444,34 @@ export default function Home() {
           trade.pnlUsd || 0
         ),
       0
+    );
+
+  const seedCapitalUsd =
+    Number(
+      account?.seedCapitalUsd || 0
+    );
+
+  const portfolioValue =
+    Number(
+      account?.portfolioValue ??
+      account?.balanceUsd ??
+      0
+    );
+
+  const equityReturn =
+    Number(
+      account?.equityReturn ??
+      (portfolioValue - seedCapitalUsd)
+    );
+
+  const equityReturnPct =
+    Number(
+      account?.equityReturnPct ??
+      (
+        seedCapitalUsd > 0
+          ? (equityReturn / seedCapitalUsd) * 100
+          : 0
+      )
     );
 
   const trainingStats =
@@ -520,6 +617,33 @@ export default function Home() {
                     account.balanceUsd ||
                       0
                   ).toFixed(2)}`
+                : 'Loading...'
+            }
+          />
+
+          <DashboardMetric
+            label="Seed Capital"
+            value={
+              account
+                ? `$${seedCapitalUsd.toFixed(2)}`
+                : 'Loading...'
+            }
+          />
+
+          <DashboardMetric
+            label="Current Equity"
+            value={
+              account
+                ? `$${portfolioValue.toFixed(2)}`
+                : 'Loading...'
+            }
+          />
+
+          <DashboardMetric
+            label="Equity Return"
+            value={
+              account
+                ? `${equityReturn >= 0 ? '+' : ''}$${equityReturn.toFixed(2)} (${equityReturnPct >= 0 ? '+' : ''}${equityReturnPct.toFixed(2)}%)`
                 : 'Loading...'
             }
           />
@@ -1086,6 +1210,207 @@ export default function Home() {
           <br />
           {trainingStats.total}{' '}
           {t.samples}
+        </div>
+      </section>
+
+      <section
+        style={{
+          background: '#0f172a',
+          color: '#fff',
+          borderRadius: 18,
+          padding: 20,
+          marginBottom: 30,
+          boxShadow: '0 8px 30px rgba(0,0,0,0.14)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 15,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 12,
+                color: '#a78bfa',
+                fontWeight: 800,
+                letterSpacing: 1,
+              }}
+            >
+              NOEUL AI
+            </div>
+
+            <h2
+              style={{
+                margin: '5px 0',
+                fontSize: 25,
+              }}
+            >
+              {t.agentArena}
+            </h2>
+
+            <div
+              style={{
+                fontSize: 12,
+                opacity: 0.55,
+              }}
+            >
+              {agentPerformanceLoading
+                ? t.agentArenaUpdating
+                : t.agentArenaDescription}
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: '7px 12px',
+              borderRadius: 20,
+              background: 'rgba(167,139,250,0.15)',
+              border: '1px solid rgba(167,139,250,0.35)',
+              color: '#c4b5fd',
+              fontSize: 12,
+              fontWeight: 800,
+            }}
+          >
+            {agentPerformance?.count || 0} AGENTS
+          </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: 20,
+            display: 'grid',
+            gap: 10,
+          }}
+        >
+          {!agentPerformance?.agents?.length ? (
+            <div
+              style={{
+                padding: 16,
+                borderRadius: 10,
+                background: '#151b23',
+                opacity: 0.7,
+              }}
+            >
+              {t.noAgentData}
+            </div>
+          ) : (
+            agentPerformance.agents.map((agent: any) => (
+              <div
+                key={agent.agent_name}
+                style={{
+                  background: '#151b23',
+                  border: '1px solid #202733',
+                  borderRadius: 12,
+                  padding: 14,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 10,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <strong>
+                    {agent.agent_name}
+                  </strong>
+
+                  <span
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 900,
+                      color:
+                        agent.accuracy_pct == null
+                          ? '#94a3b8'
+                          : Number(agent.accuracy_pct) >= 50
+                          ? '#22c55e'
+                          : '#f59e0b',
+                    }}
+                  >
+                    {agent.accuracy_pct == null
+                      ? '—'
+                      : `${Number(agent.accuracy_pct).toFixed(1)}%`}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      'repeat(auto-fit, minmax(90px, 1fr))',
+                    gap: 8,
+                    marginTop: 12,
+                  }}
+                >
+                  <AgentMetric
+                    label={t.evaluatedTrades}
+                    value={String(agent.evaluated_trades || 0)}
+                  />
+
+                  <AgentMetric
+                    label={t.correct}
+                    value={String(agent.correct_predictions || 0)}
+                    valueColor="#22c55e"
+                  />
+
+                  <AgentMetric
+                    label={t.wrong}
+                    value={String(agent.wrong_predictions || 0)}
+                    valueColor="#ef4444"
+                  />
+
+                  <AgentMetric
+                    label={t.decisions}
+                    value={String(agent.total_decisions || 0)}
+                  />
+
+                  <AgentMetric
+                    label={t.avgPnl}
+                    value={
+                      agent.avg_pnl_pct == null
+                        ? '—'
+                        : `${Number(agent.avg_pnl_pct) >= 0 ? '+' : ''}${Number(agent.avg_pnl_pct).toFixed(2)}%`
+                    }
+                    valueColor={
+                      agent.avg_pnl_pct == null
+                        ? '#94a3b8'
+                        : Number(agent.avg_pnl_pct) >= 0
+                        ? '#22c55e'
+                        : '#ef4444'
+                    }
+                  />
+                  <AgentMetric
+                    label="XP"
+                    value={String(agent.rewardState?.totalXp ?? 0)}
+                    valueColor="#c4b5fd"
+                  />
+
+                  <AgentMetric
+                    label="Reputation"
+                    value={String(
+                      Number(agent.rewardState?.reputation ?? 50).toFixed(1)
+                    )}
+                    valueColor="#fbbf24"
+                  />
+
+                  <AgentMetric
+                    label="Virtual Capital"
+                    value={`$${Number(
+                      agent.rewardState?.virtualCapital ?? 1000
+                    ).toFixed(0)}`}
+                    valueColor="#38bdf8"
+                  />
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </section>
 
@@ -1845,6 +2170,48 @@ function Metric({
           marginTop: 5,
           fontSize: 17,
           fontWeight: 800,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+function AgentMetric({
+  label,
+  value,
+  valueColor = '#fff',
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+}) {
+  return (
+    <div
+      style={{
+        background: '#0f141c',
+        borderRadius: 8,
+        padding: 10,
+        border: '1px solid #252d3a',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          opacity: 0.5,
+          textTransform: 'uppercase',
+          letterSpacing: 0.4,
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          marginTop: 4,
+          fontSize: 16,
+          fontWeight: 800,
+          color: valueColor,
         }}
       >
         {value}

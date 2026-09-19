@@ -32,13 +32,49 @@ export async function GET() {
         0
       );
 
+    /*
+     * ============================================================
+     * CURRENT PORTFOLIO EQUITY
+     * ============================================================
+     *
+     * Cash balance
+     * +
+     * Current market value of open positions
+     */
     const portfolioValue =
       account.balanceUsd +
       livePositionValue;
 
+    /*
+     * Existing trading P&L
+     *
+     * This remains separate from equity return because the
+     * account may contain deposits / adjustments that are not
+     * represented by paper trade P&L.
+     */
     const totalPnl =
       realizedPnl +
       unrealizedPnl;
+
+    /*
+     * ============================================================
+     * SEED CAPITAL RETURN
+     * ============================================================
+     *
+     * Seed capital is the fixed starting capital stored in
+     * paper_account.seed_capital_usd.
+     */
+    const seedCapitalUsd =
+      account.seedCapitalUsd;
+
+    const equityReturn =
+      portfolioValue -
+      seedCapitalUsd;
+
+    const equityReturnPct =
+      seedCapitalUsd > 0
+        ? (equityReturn / seedCapitalUsd) * 100
+        : 0;
 
     return NextResponse.json({
       success: true,
@@ -48,15 +84,30 @@ export async function GET() {
 
         positions: livePositions,
 
+        /*
+         * Portfolio
+         */
         portfolioValue,
 
         livePositionValue,
 
+        /*
+         * Trading P&L
+         */
         realizedPnl,
 
         unrealizedPnl,
 
         totalPnl,
+
+        /*
+         * Seed / equity performance
+         */
+        seedCapitalUsd,
+
+        equityReturn,
+
+        equityReturnPct,
       },
     });
   } catch (error) {

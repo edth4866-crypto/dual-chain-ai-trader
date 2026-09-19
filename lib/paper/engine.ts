@@ -24,6 +24,8 @@ export type PaperTradeResult = {
   closedAt: string;
 };
 
+const PAPER_SLIPPAGE_PCT = 3.0;
+
 export function openPaperPosition(
   token: string,
   symbol: string,
@@ -39,12 +41,26 @@ export function openPaperPosition(
     throw new Error("Invalid position size");
   }
 
+  /*
+   * Simulate market BUY slippage.
+   *
+   * Example:
+   * market price = $1.00
+   * 0.5% slippage -> fill price = $1.005
+   *
+   * investedUsd remains the total cash committed.
+   */
+  const executedEntryPrice =
+    priceUsd *
+    (1 + PAPER_SLIPPAGE_PCT / 100);
+
   return {
     token,
     symbol,
     chain,
-    entryPrice: priceUsd,
-    quantity: positionUsd / priceUsd,
+    entryPrice: executedEntryPrice,
+    quantity:
+      positionUsd / executedEntryPrice,
     investedUsd: positionUsd,
     openedAt: new Date().toISOString(),
   };
@@ -59,8 +75,20 @@ export function closePaperPosition(
     throw new Error("Invalid exit price");
   }
 
+  /*
+   * Simulate market SELL slippage.
+   *
+   * Example:
+   * market price = $1.00
+   * 0.5% slippage -> fill price = $0.995
+   */
+  const executedExitPrice =
+    exitPrice *
+    (1 - PAPER_SLIPPAGE_PCT / 100);
+
   const exitValueUsd =
-    position.quantity * exitPrice;
+    position.quantity *
+    executedExitPrice;
 
   const pnlUsd =
     exitValueUsd - position.investedUsd;
@@ -73,7 +101,7 @@ export function closePaperPosition(
     symbol: position.symbol,
     chain: position.chain,
     entryPrice: position.entryPrice,
-    exitPrice,
+    exitPrice: executedExitPrice,
     quantity: position.quantity,
     investedUsd: position.investedUsd,
     exitValueUsd,
@@ -99,26 +127,44 @@ export function checkPaperExit(
     return null;
   }
 
-  const takeProfitPrice =
-    position.entryPrice *
-    (1 + takeProfitPct / 100);
+  /*
+   * Evaluate TP / SL using the expected SELL fill price,
+   * not the raw market price.
+   *
+   * This keeps the exit target aligned with the actual
+   * paper-trade P&L after SELL slippage.
+   */
+  const expectedExitPrice =
+    currentPrice *
+    (1 - PAPER_SLIPPAGE_PCT / 100);
 
-  const stopLossPrice =
-    position.entryPrice *
-    (1 - stopLossPct / 100);
+  const expectedExitValueUsd =
+    position.quantity *
+    expectedExitPrice;
+
+  const expectedPnlPct =
+    position.investedUsd > 0
+      ? (
+          (
+            expectedExitValueUsd -
+            position.investedUsd
+          ) /
+          position.investedUsd
+        ) * 100
+      : 0;
 
   const epsilon = 1e-10;
 
   if (
-    currentPrice >=
-    takeProfitPrice - epsilon
+    expectedPnlPct >=
+    takeProfitPct - epsilon
   ) {
     return "TAKE_PROFIT";
   }
 
   if (
-    currentPrice <=
-    stopLossPrice + epsilon
+    expectedPnlPct <=
+    -stopLossPct + epsilon
   ) {
     return "STOP_LOSS";
   }

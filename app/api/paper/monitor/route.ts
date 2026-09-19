@@ -8,6 +8,8 @@ import {
   getPaperAccount,
 } from "../../../../lib/paper/store";
 import { getCurrentTokenPrice } from "../../../../lib/market";
+import { evaluatePaperTradeForAgents, refreshAgentPerformance } from "../../../../lib/agents/performance";
+import { supabase } from "../../../../lib/supabase";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -53,11 +55,63 @@ async function runPaperMonitor() {
       currentPrice
     );
 
-    closePosition(trade);
+    const {
+      data: positionRow,
+      error: positionLookupError,
+    } = await supabase
+      .from("paper_positions")
+      .select("id")
+      .eq("token", trade.token)
+      .eq("opened_at", trade.openedAt)
+      .single();
+
+    if (positionLookupError || !positionRow) {
+      throw new Error(
+        positionLookupError?.message ??
+          "Paper position ID not found."
+      );
+    }
+
+    const paperPositionId = Number(
+      positionRow.id
+    );
+
+    const paperTradeId =
+      await closePosition(trade);
+
+    let agentPerformance = null;
+
+    try {
+      agentPerformance =
+        await evaluatePaperTradeForAgents(
+          paperPositionId,
+          paperTradeId,
+          trade.entryPrice,
+          trade.exitPrice,
+          trade.pnlUsd,
+          trade.pnlPct,
+          trade.closedAt
+        );
+    } catch (error) {
+      console.error(
+        "Agent performance evaluation failed:",
+        error
+      );
+    }
+
+    try {
+      await refreshAgentPerformance();
+    } catch (error) {
+      console.error(
+        "Agent performance refresh failed:",
+        error
+      );
+    }
 
     closedTrades.push({
       ...trade,
       reason,
+      agentPerformance,
     });
   }
 
@@ -65,7 +119,7 @@ async function runPaperMonitor() {
     success: true,
     checkedPositions,
     closedTrades,
-    account: getPaperAccount(),
+    account: await getPaperAccount(),
   };
 }
 

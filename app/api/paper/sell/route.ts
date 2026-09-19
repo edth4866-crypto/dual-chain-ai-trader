@@ -49,13 +49,16 @@ export async function POST(request: Request) {
       exitPrice
     );
 
-    closePosition(trade);
+    await closePosition(trade);
+
+    const updatedAccount =
+      await getPaperAccount();
 
     return NextResponse.json({
       success: true,
       message: "Paper SELL executed.",
       trade,
-      account: getPaperAccount(),
+      account: updatedAccount,
     });
   } catch (error) {
     console.error("PAPER SELL ERROR:", error);

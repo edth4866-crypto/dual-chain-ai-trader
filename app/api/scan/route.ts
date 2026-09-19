@@ -358,10 +358,55 @@ export async function POST(request: Request) {
                 | null = null;
 
               /*
+               * Specialist Agent Prediction
+               *
+               * Each specialist agent gets an
+               * independent prediction based on
+               * its own score.
+               */
+              if (
+                agent.name !==
+                  "Agent Debate" &&
+                agent.name !==
+                  "Risk Veto" &&
+                agent.name !==
+                  "Rug Detector" &&
+                agent.name !==
+                  "Final AI"
+              ) {
+                if (agent.score >= 70) {
+                  predictedAction = "BUY";
+                } else if (agent.score <= 35) {
+                  predictedAction = "AVOID";
+                } else {
+                  predictedAction = "HOLD";
+                }
+              }
+
+              /*
+               * Rug Detector
+               */
+
+              else if (
+                agent.name ===
+                "Rug Detector"
+              ) {
+                predictedAction =
+                  agent.status ===
+                  "VETO"
+                    ? "VETO"
+                    : agent.score >= 70
+                      ? "BUY"
+                      : agent.score <= 35
+                        ? "AVOID"
+                        : "HOLD";
+              }
+
+              /*
                * Agent Debate
                */
 
-              if (
+              else if (
                 agent.name ===
                 "Agent Debate"
               ) {

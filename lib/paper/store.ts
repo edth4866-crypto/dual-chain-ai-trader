@@ -55,6 +55,7 @@ export type StoredPaperPosition =
 
 export type PaperAccount = {
   balanceUsd: number;
+  seedCapitalUsd: number;
   positions: StoredPaperPosition[];
   trades: PaperTradeResult[];
 };
@@ -402,6 +403,10 @@ export async function getPaperAccount(): Promise<PaperAccount> {
       account.balance_usd
     ),
 
+    seedCapitalUsd: toNumber(
+      account.seed_capital_usd
+    ),
+
     positions:
       (positions ?? []).map(
         mapPosition
@@ -417,80 +422,61 @@ export async function getPaperAccount(): Promise<PaperAccount> {
 export async function addPosition(
   position: StoredPaperPosition
 ): Promise<number> {
-  const account =
-    await getPaperAccount();
-
-  if (
-    position.investedUsd >
-    account.balanceUsd
-  ) {
-    throw new Error(
-      "Insufficient paper balance."
-    );
-  }
-
+  /*
+   * ============================================================
+   * ATOMIC PAPER BUY
+   * ============================================================
+   *
+   * PostgreSQL performs both critical operations
+   * inside one transaction:
+   *
+   * 1. Check / debit available cash
+   * 2. Create the open position
+   *
+   * If either step fails, the entire transaction
+   * is rolled back.
+   */
   const {
-    data: insertedPosition,
-    error: positionError,
-  } = await supabase
-    .from("paper_positions")
-    .insert({
-      token: position.token,
+    data: insertedPositionId,
+    error: openError,
+  } = await supabase.rpc(
+    "paper_open_position",
+    {
+      p_token:
+        position.token,
 
-      symbol: position.symbol,
+      p_symbol:
+        position.symbol,
 
-      chain: position.chain,
+      p_chain:
+        position.chain,
 
-      entry_price:
+      p_entry_price:
         position.entryPrice,
 
-      quantity:
+      p_quantity:
         position.quantity,
 
-      invested_usd:
+      p_invested_usd:
         position.investedUsd,
 
-      opened_at:
+      p_opened_at:
         position.openedAt,
 
-      market_snapshot:
+      p_market_snapshot:
         position.marketSnapshot ??
         null,
-    })
-    .select("id")
-    .single();
+    }
+  );
 
-  if (positionError) {
+  if (openError) {
     throw new Error(
-      positionError.message
-    );
-  }
-
-  const newBalance =
-    account.balanceUsd -
-    position.investedUsd;
-
-  const {
-    error: balanceError,
-  } = await supabase
-    .from("paper_account")
-    .update({
-      balance_usd:
-        newBalance,
-
-      updated_at:
-        new Date().toISOString(),
-    })
-    .eq("id", 1);
-
-  if (balanceError) {
-    throw new Error(
-      balanceError.message
+      openError.message
     );
   }
 
   return Number(
-    insertedPosition.id
+    insertedPositionId
   );
 }
 
@@ -533,75 +519,79 @@ export async function closePosition(
     null;
 
   /*
-   * Remove the open position.
+   * ============================================================
+   * ATOMIC PAPER CLOSE
+   * ============================================================
+   *
+   * PostgreSQL performs all critical accounting operations
+   * inside one transaction:
+   *
+   * 1. Lock open position
+   * 2. Save completed trade
+   * 3. Delete open position
+   * 4. Credit exit value back to cash balance
+   *
+   * If any step fails, the entire transaction is rolled back.
    */
   const {
-    error: deleteError,
-  } = await supabase
-    .from("paper_positions")
-    .delete()
-    .eq("id", position.id);
+    data: insertedTradeId,
+    error: closeError,
+  } = await supabase.rpc(
+    "paper_close_position",
+    {
+      p_position_id:
+        Number(position.id),
 
-  if (deleteError) {
-    throw new Error(
-      deleteError.message
-    );
-  }
+      p_token:
+        trade.token,
 
-  /*
-   * Save completed paper trade.
-   */
-  const {
-    data: insertedTrade,
-    error: tradeError,
-  } = await supabase
-    .from("paper_trades")
-    .insert({
-      token: trade.token,
+      p_symbol:
+        trade.symbol,
 
-      symbol: trade.symbol,
+      p_chain:
+        trade.chain,
 
-      chain: trade.chain,
-
-      entry_price:
+      p_entry_price:
         trade.entryPrice,
 
-      exit_price:
+      p_exit_price:
         trade.exitPrice,
 
-      quantity:
+      p_quantity:
         trade.quantity,
 
-      invested_usd:
+      p_invested_usd:
         trade.investedUsd,
 
-      exit_value_usd:
+      p_exit_value_usd:
         trade.exitValueUsd,
 
-      pnl_usd:
+      p_pnl_usd:
         trade.pnlUsd,
 
-      pnl_pct:
+      p_pnl_pct:
         trade.pnlPct,
 
-      reason:
-        trade.reason ??
-        null,
+      p_reason:
+        trade.reason ?? null,
 
-      opened_at:
+      p_opened_at:
         trade.openedAt,
 
-      closed_at:
+      p_closed_at:
         trade.closedAt,
-    })
-    .select("id")
-    .single();
+    }
+  );
 
-  if (tradeError) {
+  if (closeError) {
     throw new Error(
-      tradeError.message
+      closeError.message
     );
   }
+
+  const insertedTrade = {
+    id: Number(insertedTradeId),
+  };
 
   /*
    * Determine training label.
@@ -766,8 +756,16 @@ export async function closePosition(
     });
 
   if (trainingError) {
-    throw new Error(
-      `AI training data save failed: ${trainingError.message}`
+    /*
+     * The paper trade has already been closed
+     * successfully inside the atomic DB transaction.
+     *
+     * Training data is secondary and must never make
+     * a completed SELL appear to have failed.
+     */
+    console.error(
+      "AI training data save failed:",
+      trainingError.message
     );
   }
 
@@ -898,47 +896,6 @@ export async function closePosition(
     console.error(
       "Agent Arena outcome error:",
       error
-    );
-  }
-
-  /*
-   * Return trade value to
-   * paper account.
-   */
-  const {
-    data: account,
-    error: accountError,
-  } = await supabase
-    .from("paper_account")
-    .select("balance_usd")
-    .eq("id", 1)
-    .single();
-
-  if (accountError) {
-    throw new Error(
-      accountError.message
-    );
-  }
-
-  const {
-    error: balanceError,
-  } = await supabase
-    .from("paper_account")
-    .update({
-      balance_usd:
-        toNumber(
-          account.balance_usd
-        ) +
-        trade.exitValueUsd,
-
-      updated_at:
-        new Date().toISOString(),
-    })
-    .eq("id", 1);
-
-  if (balanceError) {
-    throw new Error(
-      balanceError.message
     );
   }
 
