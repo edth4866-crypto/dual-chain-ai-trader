@@ -776,7 +776,8 @@ function riskVeto(
 
 export function runAgents(
   t: TokenCandidate,
-  whaleFlows: WhaleFlowInput[] = []
+  whaleFlows: WhaleFlowInput[] = [],
+  performanceWeights: Record<string, number> = {}
 ): {
   agents: AgentResult[];
   decision: FinalDecision;
@@ -839,7 +840,8 @@ export function runAgents(
 
   const debate =
     runAgentDebate(
-      agents
+      agents,
+      performanceWeights
     );
 
   const debateStatus:
@@ -932,7 +934,7 @@ export function runAgents(
           "Agent Debate"
     );
 
-  const averageScore =
+  const unweightedAverageScore =
     baseAgents.reduce(
       (sum, agent) =>
         sum + agent.score,
@@ -943,12 +945,54 @@ export function runAgents(
       1
     );
 
+  const weightedScoreTotal =
+    baseAgents.reduce(
+      (sum, agent) => {
+        const weight =
+          performanceWeights[agent.name] ?? 1;
+
+        return sum +
+          agent.score * weight;
+      },
+      0
+    );
+
+  const totalWeight =
+    baseAgents.reduce(
+      (sum, agent) =>
+        sum +
+        (performanceWeights[agent.name] ?? 1),
+      0
+    );
+
+  const averageScore =
+    weightedScoreTotal /
+    Math.max(
+      totalWeight,
+      1
+    );
+
   /*
    * FINAL SCORE
    *
    * 80% specialist analysis
    * 20% agent debate
    */
+
+  const unweightedCombinedScore =
+    unweightedAverageScore * 0.8 +
+    debate.score * 0.2;
+
+  const unweightedFinalScore =
+    Math.round(
+      Math.max(
+        0,
+        Math.min(
+          100,
+          unweightedCombinedScore
+        )
+      )
+    );
 
   const combinedScore =
     averageScore * 0.8 +
@@ -1010,6 +1054,24 @@ export function runAgents(
             averageScore
           ),
 
+        unweightedSpecialistScore:
+          Math.round(
+            unweightedAverageScore
+          ),
+
+        unweightedFinalScore,
+
+        weightedFinalScore:
+          finalScore,
+
+        performanceWeightImpact:
+          finalScore -
+          unweightedFinalScore,
+
+        performanceWeights: {
+          ...performanceWeights,
+        },
+
         debateDecision:
           debate.decision,
 
@@ -1043,7 +1105,9 @@ export function runAgents(
           agent.name !==
             "Final AI" &&
           agent.name !==
-            "Risk Veto"
+            "Risk Veto" &&
+          agent.name !==
+            "Agent Debate"
       )
       .filter(
         (agent) =>
