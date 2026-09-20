@@ -28,7 +28,8 @@ export type DebateResult = {
 };
 
 export function runAgentDebate(
-  agents: AgentResult[]
+  agents: AgentResult[],
+  performanceWeights: Record<string, number> = {}
 ): DebateResult {
   const specialists =
     agents.filter(
@@ -41,6 +42,10 @@ export function runAgentDebate(
   let holdVotes = 0;
   let avoidVotes = 0;
 
+  let weightedBuyVotes = 0;
+  let weightedHoldVotes = 0;
+  let weightedAvoidVotes = 0;
+
   const bullish: {
     name: string;
     score: number;
@@ -52,11 +57,15 @@ export function runAgentDebate(
   }[] = [];
 
   for (const agent of specialists) {
+    const weight =
+      performanceWeights[agent.name] ?? 1;
+
     if (
       agent.status === "VETO" ||
       agent.score < 35
     ) {
       avoidVotes++;
+      weightedAvoidVotes += weight;
 
       bearish.push({
         name: agent.name,
@@ -68,6 +77,7 @@ export function runAgentDebate(
 
     if (agent.score >= 70) {
       buyVotes++;
+      weightedBuyVotes += weight;
 
       bullish.push({
         name: agent.name,
@@ -78,6 +88,7 @@ export function runAgentDebate(
     }
 
     holdVotes++;
+    weightedHoldVotes += weight;
   }
 
   bullish.sort(
@@ -95,14 +106,24 @@ export function runAgentDebate(
     holdVotes +
     avoidVotes;
 
+  const weightedTotalVotes =
+    weightedBuyVotes +
+    weightedHoldVotes +
+    weightedAvoidVotes;
+
   let decision:
     DebateDecision;
 
+  /*
+   * Safety rule stays unweighted:
+   * two independent avoidance signals
+   * can still block the trade.
+   */
   if (avoidVotes >= 2) {
     decision = "AVOID";
   } else if (
-    buyVotes > holdVotes &&
-    buyVotes > avoidVotes &&
+    weightedBuyVotes > weightedHoldVotes &&
+    weightedBuyVotes > weightedAvoidVotes &&
     buyVotes >= 5
   ) {
     decision = "BUY";
@@ -111,24 +132,23 @@ export function runAgentDebate(
   }
 
   const score =
-    totalVotes > 0
+    weightedTotalVotes > 0
       ? Math.round(
           (
-            buyVotes * 100 +
-            holdVotes * 50 +
-            avoidVotes * 0
+            weightedBuyVotes * 100 +
+            weightedHoldVotes * 50
           ) /
-            totalVotes
+            weightedTotalVotes
         )
       : 50;
 
   const confidence =
-    totalVotes > 0
+    weightedTotalVotes > 0
       ? Math.abs(
-          buyVotes -
-            avoidVotes
+          weightedBuyVotes -
+            weightedAvoidVotes
         ) /
-        totalVotes
+        weightedTotalVotes
       : 0;
 
   const strongestBullish =
