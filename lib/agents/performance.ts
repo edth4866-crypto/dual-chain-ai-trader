@@ -58,6 +58,77 @@ function evaluatePrediction(
   return null;
 }
 
+/*
+ * ================================================================
+ * LEARNING V2 - ACTION ADJUSTED P&L
+ * ================================================================
+ *
+ * Raw paper P&L represents the BUY trade itself.
+ *
+ * BUY:
+ *   +20% market result => +20% agent result
+ *
+ * AVOID / VETO / SELL:
+ *   +20% market result => -20% agent result
+ *   -20% market result => +20% agent result
+ *
+ * HOLD:
+ *   Small price movement is good.
+ *   Movement beyond +/-5% becomes progressively worse.
+ */
+
+export function getActionAdjustedPnlPct(
+  row: Pick<
+    AgentDecisionRow,
+    | "agent_name"
+    | "agent_status"
+    | "predicted_action"
+  >,
+  pnlPct: number
+): number | null {
+  let action =
+    row.predicted_action
+      ?.toUpperCase() ?? null;
+
+  if (row.agent_name === "Risk Veto") {
+    action =
+      row.agent_status
+        ?.toUpperCase() === "VETO"
+        ? "VETO"
+        : "HOLD";
+  }
+
+  if (
+    row.agent_name === "Rug Detector" &&
+    row.agent_status
+      ?.toUpperCase() === "VETO"
+  ) {
+    action = "VETO";
+  }
+
+  if (!action) {
+    return null;
+  }
+
+  if (action === "BUY") {
+    return pnlPct;
+  }
+
+  if (
+    action === "AVOID" ||
+    action === "VETO" ||
+    action === "SELL"
+  ) {
+    return -pnlPct;
+  }
+
+  if (action === "HOLD") {
+    return 5 - Math.abs(pnlPct);
+  }
+
+  return null;
+}
+
 export async function evaluatePaperTradeForAgents(
   paperPositionId: number,
   paperTradeId: number | null,
@@ -104,16 +175,9 @@ export async function evaluatePaperTradeForAgents(
         pnlPct
       );
 
-    if (predictionCorrect === null) {
-      continue;
-    }
-
-    evaluated++;
-
-    if (predictionCorrect) {
-      correct++;
-    } else {
-      wrong++;
+    if (predictionCorrect !== null) {
+      evaluated++;
+      if (predictionCorrect) correct++; else wrong++;
     }
 
     const { error: updateError } =
@@ -143,6 +207,8 @@ export async function evaluatePaperTradeForAgents(
       );
     }
 
+    if (predictionCorrect === null) continue;
+
     const reward = calculateAgentReward(
       predictionCorrect,
       pnlPct,
@@ -169,7 +235,7 @@ export async function refreshAgentPerformance() {
     await supabase
       .from("ai_agent_decisions")
       .select(
-        "agent_name, pnl_usd, pnl_pct, prediction_correct"
+        "agent_name, agent_status, predicted_action, pnl_usd, pnl_pct, prediction_correct"
       )
       .not("prediction_correct", "is", null);
 
@@ -187,6 +253,8 @@ export async function refreshAgentPerformance() {
       wrong: number;
       pnlUsdTotal: number;
       pnlPctTotal: number;
+      adjustedPnlPctTotal: number;
+      adjustedPnlSamples: number;
     }
   >();
 
@@ -204,6 +272,8 @@ export async function refreshAgentPerformance() {
         wrong: 0,
         pnlUsdTotal: 0,
         pnlPctTotal: 0,
+        adjustedPnlPctTotal: 0,
+        adjustedPnlSamples: 0,
       };
 
     current.evaluated += 1;
@@ -216,6 +286,33 @@ export async function refreshAgentPerformance() {
 
     current.pnlUsdTotal += Number(row.pnl_usd ?? 0);
     current.pnlPctTotal += Number(row.pnl_pct ?? 0);
+
+    const rawPnlPct =
+      Number(row.pnl_pct);
+
+    if (Number.isFinite(rawPnlPct)) {
+      const adjustedPnlPct =
+        getActionAdjustedPnlPct(
+          {
+            agent_name: agentName,
+            agent_status:
+              row.agent_status ?? null,
+            predicted_action:
+              row.predicted_action ?? null,
+          },
+          rawPnlPct
+        );
+
+      if (
+        adjustedPnlPct !== null &&
+        Number.isFinite(adjustedPnlPct)
+      ) {
+        current.adjustedPnlPctTotal +=
+          adjustedPnlPct;
+
+        current.adjustedPnlSamples += 1;
+      }
+    }
 
     grouped.set(agentName, current);
   }
@@ -240,6 +337,12 @@ export async function refreshAgentPerformance() {
     const avgPnlPct =
       evaluated > 0
         ? stats.pnlPctTotal / evaluated
+        : null;
+
+    const avgAdjustedPnlPct =
+      stats.adjustedPnlSamples > 0
+        ? stats.adjustedPnlPctTotal /
+          stats.adjustedPnlSamples
         : null;
 
     const { data: existing, error: existingError } =
@@ -417,4 +520,75 @@ export async function getAgentRewardState(agentName: string) {
     ),
     streak: rows[0]?.streak ?? 0,
   };
+}
+
+/*
+ * ================================================================
+ * AGENT LEARNING V2 - PERFORMANCE WEIGHT
+ * ================================================================
+ *
+ * Conservative learning:
+ * - Minimum 10 evaluated trades
+ * - Accuracy is the main signal
+ * - Action-adjusted P&L is the secondary signal
+ * - Small samples reduce confidence
+ * - Final influence remains clamped to 0.8 - 1.2
+ */
+export function calculateLearningV2Weight(
+  evaluatedTrades: number,
+  accuracyPct: number,
+  avgAdjustedPnlPct: number
+): number {
+  if (
+    evaluatedTrades < 10 ||
+    !Number.isFinite(accuracyPct) ||
+    !Number.isFinite(avgAdjustedPnlPct)
+  ) {
+    return 1;
+  }
+
+  const accuracySignal =
+    Math.max(
+      -1,
+      Math.min(
+        1,
+        (accuracyPct - 50) / 50
+      )
+    );
+
+  const pnlSignal =
+    Math.max(
+      -1,
+      Math.min(
+        1,
+        avgAdjustedPnlPct / 20
+      )
+    );
+
+  const sampleConfidence =
+    Math.max(
+      0,
+      Math.min(
+        1,
+        (evaluatedTrades - 10) / 40
+      )
+    );
+
+  const learnedSignal =
+    accuracySignal * 0.7 +
+    pnlSignal * 0.3;
+
+  const confidenceMultiplier =
+    0.5 + sampleConfidence * 0.5;
+
+  const rawWeight =
+    1 +
+    learnedSignal *
+      confidenceMultiplier *
+      0.2;
+
+  return Math.max(
+    0.8,
+    Math.min(1.2, rawWeight)
+  );
 }
